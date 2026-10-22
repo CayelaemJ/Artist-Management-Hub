@@ -166,6 +166,53 @@ async function staticFile(req,res,urlPath){
   res.writeHead(200,{...headers,"Content-Type":types[ext],"Cache-Control":ext===".html"?"no-store":"public, max-age=300"});res.end(data);
  }catch{fail(res,404,"Not found");}
 }
+
+async function demoBookings(req,res){
+ const user=sessionUser(req);
+ if(!user||user.role!=="manager")return fail(res,403,"Demo manager sign-in required");
+ const r=await pool.query("SELECT b.id,a.stage_name,b.contact_name,b.customer_email,b.event_type,b.event_date,b.venue,b.budget_zar,b.message,b.status,b.created_at FROM demo_booking_enquiries b JOIN artists a ON a.id=b.artist_id ORDER BY b.created_at DESC LIMIT 100");
+ return json(res,200,{demo:true,enquiries:r.rows,allowedTransitions:transitions});
+}
+async function demoBookingCreate(req,res){
+ const user=sessionUser(req);
+ if(!user)return fail(res,401,"Sign in to a fictional demo account");
+ if(!validOrigin(req))return fail(res,403,"Origin not allowed");
+ if(!rateLimit(req,"demoBooking",12,600000))return fail(res,429,"Too many demonstration requests");
+ let b;try{b=await body(req);}catch(e){return fail(res,400,e.message);}
+ const slug=text(b.artistSlug,100),venue=text(b.venue,180),eventType=text(b.eventType,100);
+ const eventDate=text(b.date,20),budget=b.budget==null||b.budget===""?null:Number(b.budget);
+ if(!slug||venue.length<2||eventType.length<2||!validDate(eventDate)||eventDate<new Date().toISOString().slice(0,10))return fail(res,400,"Valid artist, venue, event type and future date are required");
+ if(budget!==null&&(!Number.isFinite(budget)||budget<0||budget>100000000))return fail(res,400,"Invalid budget");
+ const r=await pool.query("INSERT INTO demo_booking_enquiries (artist_id,customer_email,contact_name,event_type,event_date,venue,budget_zar,message) SELECT id,$2,$3,$4,$5,$6,$7,$8 FROM artists WHERE slug=$1 AND synthetic=TRUE RETURNING id,status",
+ [slug,user.email,user.name,eventType,eventDate,venue,budget,text(b.message,1000)]);
+ if(!r.rowCount)return fail(res,404,"Demo artist not found");
+ return json(res,201,{demo:true,reference:r.rows[0].id,status:r.rows[0].status,message:"Fictional booking enquiry saved to the separate demonstration table. Not a real reservation."});
+}
+async function demoBookingUpdate(req,res,id){
+ const user=sessionUser(req);
+ if(!user||user.role!=="manager")return fail(res,403,"Demo manager sign-in required");
+ if(!validOrigin(req))return fail(res,403,"Origin not allowed");
+ if(!/^[0-9a-f-]{36}$/i.test(id))return fail(res,400,"Invalid demo reference");
+ let b;try{b=await body(req);}catch(e){return fail(res,400,e.message);}
+ const next=text(b.status,32);
+ const client=await pool.connect();
+ try{
+  await client.query("BEGIN");
+  const r=await client.query("SELECT id,artist_id,event_date,status FROM demo_booking_enquiries WHERE id=$1 FOR UPDATE",[id]);
+  if(!r.rowCount){await client.query("ROLLBACK");return fail(res,404,"Demo enquiry not found");}
+  const current=r.rows[0];
+  if(!(transitions[current.status]||[]).includes(next)){await client.query("ROLLBACK");return fail(res,409,"Invalid demo workflow transition");}
+  if(next==="confirmed"){
+   await client.query("SELECT pg_advisory_xact_lock($1)",[current.artist_id]);
+   const conflict=await client.query("SELECT 1 FROM demo_booking_enquiries WHERE artist_id=$1 AND event_date=$2 AND status='confirmed' AND id<>$3 LIMIT 1",[current.artist_id,current.event_date,id]);
+   if(conflict.rowCount){await client.query("ROLLBACK");return fail(res,409,"Fictional artist already confirmed for this date");}
+  }
+  await client.query("UPDATE demo_booking_enquiries SET status=$1,updated_at=now() WHERE id=$2",[next,id]);
+  await client.query("COMMIT");
+  return json(res,200,{demo:true,reference:id,status:next});
+ }catch(e){await client.query("ROLLBACK");throw e;}finally{client.release();}
+}
+
 async function demoLogin(req,res){
  if(!DEMO_ENABLED)return fail(res,404,"Demo sign-in is not enabled");
  if(!validOrigin(req))return fail(res,403,"Origin not allowed");
@@ -209,6 +256,10 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==="GET"&&url.pathname==="/api/demo-auth/me")return demoMe(req,res);
   if(req.method==="GET"&&url.pathname==="/api/demo-auth/workspace")return myDemoWorkspace(req,res);
   if(url.pathname.startsWith("/api/")&&!pool)return fail(res,503,"Database not configured");
+  if(req.method==="GET"&&url.pathname==="/api/demo-bookings")return demoBookings(req,res);
+  if(req.method==="POST"&&url.pathname==="/api/demo-bookings")return demoBookingCreate(req,res);
+  if(req.method==="PATCH"&&url.pathname.startsWith("/api/demo-bookings/"))return demoBookingUpdate(req,res,url.pathname.slice("/api/demo-bookings/".length));
+
   if(req.method==="GET"&&url.pathname==="/api/artists")return await artists(res);
   if(req.method==="GET"&&url.pathname.startsWith("/api/demo/artist/"))return await overview(res,decodeURIComponent(url.pathname.slice("/api/demo/artist/".length)));
   if(req.method==="POST"&&url.pathname==="/api/bookings")return await createBooking(req,res);
