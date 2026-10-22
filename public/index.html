@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+ <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+ <meta name="theme-color" content="#0D1117">
+ <meta name="description" content="CABO Artist Hub — discover creative talent, request performances, and explore artist career intelligence.">
+ <title>CABO Artist Hub — Beyond the spotlight</title>
+ <link rel="preconnect" href="https://fonts.googleapis.com">
+ <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+ <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+ <link rel="stylesheet" href="/styles.css">
+ <script src="/app.js" defer></script>
+</head>
+<body>
+ <div class="demo-ribbon">CABO ARTIST HUB <span class="dot"></span> EARLY DEMONSTRATION <span class="dot"></span> FICTIONAL ARTISTS & SYNTHETIC INSIGHTS</div>
+ <header class="site-header">
+   <a class="brand" href="/" aria-label="CABO Artist Hub home">
+     <span class="brand-mark">C<span class="brand-spark">✳</span></span>
+     <span class="brand-words"><strong>CABO</strong><small>ARTIST HUB</small></span>
+   </a>
+   <nav class="top-nav" aria-label="Main navigation">
+     <a href="#artists" class="nav-public">The roster</a>
+     <a href="#how-it-works" class="nav-public">How booking works</a>
+     <button id="studio-nav" class="nav-studio linklike" type="button">Artist intelligence</button>
+   </nav>
+   <button class="outline-button header-cta" id="nav-book" type="button">Find your artist <span aria-hidden="true">↗</span></button>
+ </header>
+
+ <main id="public-view">
+  <section class="hero" aria-labelledby="hero-title">
+   <div class="hero-grid">
+    <div class="hero-copy">
+     <div class="eyebrow"><span class="line"></span> THE FUTURE SOUNDS DIFFERENT</div>
+     <h1 id="hero-title">Beyond the <em>spotlight.</em></h1>
+     <p class="hero-subtitle">Exceptional talent. Real opportunities. A platform where every artist can be discovered, booked and empowered to build a career that lasts.</p>
+     <div class="hero-actions">
+      <a class="primary-button" href="#artists">Explore the roster <span aria-hidden="true">↗</span></a>
+      <button class="text-button" id="explore-studio" type="button">Inside the artist studio <span aria-hidden="true">→</span></button>
+     </div>
+     <div class="hero-proof"><span>01 / DISCOVER</span><span>02 / CONNECT</span><span>03 / GROW</span></div>
+    </div>
+    <div class="hero-art" aria-hidden="true">
+      <div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="orbit orbit-three"></div>
+      <div class="record-disc"><div class="disc-inner"><span class="disc-star">✳</span><span>CABO / SOUND</span><span>001 — ∞</span></div></div>
+      <div class="floating-tag floating-top">CREATIVITY<br>MEETS INTELLIGENCE</div>
+      <div class="floating-tag floating-bottom">THE NEW STAGE / 2026</div>
+      <span class="art-corner">⌁</span>
+    </div>
+   </div>
+   <div class="hero-bottom"><span>INDEPENDENT VOICES. LIMITLESS POSSIBILITY.</span><span>SCROLL TO DISCOVER ↓</span></div>
+  </section>
+
+  <section class="marquee" aria-label="Our creative categories"><div>LIVE MUSIC <span>✳</span> DJs <span>✳</span> COMEDY <span>✳</span> AFRO-POP <span>✳</span> JAZZ <span>✳</span> CULTURE <span>✳</span> EMERGING TALENT <span>✳</span></div></section>
+
+  <section class="roster-section section-pad" id="artists">
+    <div class="section-intro">
+     <div><span class="eyebrow">01 / THE PEOPLE BEHIND THE SOUND</span><h2>Meet the <em>roster.</em></h2></div>
+     <p>From new voices to established acts. Discover the talent that brings a moment to life.</p>
+    </div>
+    <div class="filters">
+      <label class="search-wrap" for="artist-search"><span aria-hidden="true">⌕</span><input id="artist-search" placeholder="Search artists, genres or cities" autocomplete="off"></label>
+      <div class="filter-chips" id="genre-filters" aria-label="Genre filter">
+        <button type="button" class="chip selected" data-filter="all">All artists</button>
+        <button type="button" class="chip" data-filter="music">Music</button>
+        <button type="button" class="chip" data-filter="dj">DJs</button>
+        <button type="button" class="chip" data-filter="other">Other acts</button>
+      </div>
+    </div>
+    <div class="artist-grid" id="artist-grid"><p class="loading">Loading our fictional roster…</p></div>
+    <p id="artist-load-error" class="error-block" hidden></p>
+  </section>
+
+  <section class="concept-section section-pad" id="how-it-works">
+   <div class="section-intro"><div><span class="eyebrow">02 / NO GATEKEEPING</span><h2>Bring the <em>moment</em> to life.</h2></div><p>Booking should be straightforward, transparent and personal. Every great show starts with a conversation.</p></div>
+   <div class="step-grid">
+    <article class="step"><span>01</span><h3>Find your sound</h3><p>Explore artists and the styles they bring to stages, celebrations and experiences.</p></article>
+    <article class="step"><span>02</span><h3>Send an enquiry</h3><p>Tell us the date, location, budget and vision. No account is needed.</p></article>
+    <article class="step"><span>03</span><h3>Let's make it happen</h3><p>A manager reviews availability and responds separately. Your enquiry is not a confirmed booking.</p></article>
+   </div>
+  </section>
+
+  <section class="manifesto section-pad"><span class="eyebrow">THE CABO WAY</span><h2>Fame isn't the only measure of <em>success.</em></h2><p>We believe in careers built to last — understanding the money behind the music, opportunities ahead, and the human journey behind every artist.</p><button class="primary-button" id="manifesto-studio" type="button">Explore artist intelligence <span aria-hidden="true">↗</span></button></section>
+ </main>
+
+ <main id="studio-view" hidden>
+  <section class="studio-top section-pad">
+    <div class="studio-heading"><div><span class="eyebrow">PRIVATE MANAGEMENT PLATFORM / DEMONSTRATION</span><h1>Artist <em>intelligence.</em></h1><p>Go beyond followers and headline fees. Understand business performance, reputation and creative progress.</p></div><button type="button" id="back-to-public" class="outline-button">← Back to discovery</button></div>
+    <div class="studio-nav"><button type="button" class="studio-tab active" data-panel="overview">Career dashboard</button><button type="button" class="studio-tab" data-panel="enquiries">Booking management</button><button type="button" class="studio-tab" data-panel="ai">AI advisor</button></div>
+    <div id="overview-panel" class="studio-panel">
+      <div class="studio-bar"><div><span class="eyebrow">SELECT AN ARTIST</span><select id="studio-artist" aria-label="Choose demo artist"><option value="">Loading artists…</option></select></div><span class="synthetic-label">● SYNTHETIC DATA ONLY</span></div>
+      <div id="overview-error" class="error-block" hidden></div>
+      <div id="overview-content"><p class="loading">Loading career intelligence…</p></div>
+    </div>
+    <div id="enquiries-panel" class="studio-panel" hidden>
+      <div class="panel-intro"><h2>Booking requests</h2><p>Restricted management access. Enquiries are never auto-confirmed. This prototype uses a single management token; granular team permissions are not implemented.</p></div>
+      <form id="admin-form" class="token-form"><label for="admin-token">Management access token</label><div><input id="admin-token" type="password" placeholder="Token configured in Render" autocomplete="off" required><button class="primary-button" type="submit">Access enquiries</button></div></form>
+      <div id="admin-message" class="message" role="status"></div>
+      <div id="enquiry-list"></div>
+    </div>
+    <div id="ai-panel" class="studio-panel" hidden>
+      <div class="panel-intro"><h2>Creative career advisor <span class="ai-label">GROQ AI / OPTIONAL</span></h2><p>Get practical advice for the selected fictional artist. The AI feature requires your management token and a server-side Groq key. It does not use real social feeds or financial documents.</p></div>
+      <form id="ai-form" class="ai-form"><label for="ai-artist">Artist</label><select id="ai-artist"></select><label for="ai-question">What's on your mind?</label><textarea id="ai-question" rows="4" maxlength="350" placeholder="What steps could improve booking consistency for this artist?" required></textarea><button class="primary-button" type="submit">Ask CABO intelligence ↗</button></form>
+      <div id="ai-answer" class="ai-answer" aria-live="polite"></div>
+    </div>
+  </section>
+ </main>
+
+ <footer><div class="footer-brand"><span class="brand-mark">C✳</span><div><strong>CABO ARTIST HUB</strong><small>BEYOND THE SPOTLIGHT.</small></div></div><p>Powered by CABO Solutions. Built for people creating the next chapter.</p><span>© 2026 CABO SOLUTIONS · PROTOTYPE</span></footer>
+ <dialog id="booking-dialog" aria-labelledby="booking-heading">
+   <form id="booking-form" class="booking-form">
+     <div class="dialog-top"><div><span class="eyebrow">A MOMENT IN THE MAKING</span><h2 id="booking-heading">Request a <em>booking.</em></h2><p id="booking-artist-name"></p></div><button id="close-dialog" type="button" aria-label="Close booking form" class="close-btn">✕</button></div>
+     <input type="hidden" name="artistSlug" id="booking-slug">
+     <label>Your name<input name="name" maxlength="120" autocomplete="name" required></label>
+     <label>Email address<input type="email" name="email" maxlength="254" autocomplete="email" required></label>
+     <div class="form-columns"><label>Event type<input name="eventType" maxlength="100" placeholder="Festival, wedding, corporate…" required></label><label>Event date<input type="date" name="date" id="booking-date" required></label></div>
+     <div class="form-columns"><label>Start time (optional)<input type="time" name="startTime"></label><label>End time (optional)<input type="time" name="endTime"></label></div>
+     <label>Venue / location<input name="venue" maxlength="180" placeholder="Venue, city" required></label>
+     <label>Proposed budget in ZAR (optional)<input type="number" name="budget" min="0" max="100000000" step="0.01" placeholder="e.g. 12000"></label>
+     <label>Tell us about the event<textarea name="message" maxlength="1000" rows="3"></textarea></label>
+     <input name="website" class="honeypot" tabindex="-1" autocomplete="off" aria-hidden="true">
+     <p class="form-note">Submitting an enquiry does not reserve the artist or guarantee a response. No automated email is currently sent.</p>
+     <p id="booking-status" class="message" role="status"></p>
+     <button class="primary-button full-width" type="submit" id="send-enquiry">Send booking enquiry ↗</button>
+   </form>
+ </dialog>
+</body>
+</html>
