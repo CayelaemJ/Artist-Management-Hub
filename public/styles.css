@@ -25,3 +25,9 @@ dialog{width:min(680px,calc(100vw - 30px));max-height:calc(100vh - 24px);overflo
 .insight-grid strong{font:500 25px var(--display);display:block;margin:13px 0 5px}
 .insight-grid p{font-size:13px;color:var(--muted)}.fineprint{font:10px/1.9 var(--mono);color:var(--gold);margin:25px 0 0}
 @media(max-width:800px){.insight-grid{grid-template-columns:1fr}}
+
+.demo-booking-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:20px 0;padding:22px;border:1px solid var(--border);background:#171a1c}
+.demo-booking-form label{display:flex;flex-direction:column;gap:8px;font:11px var(--mono);color:var(--sand)}
+.demo-booking-form input,.demo-booking-form select{min-width:0;width:100%;padding:12px;border:1px solid #664c3c;background:#111518;color:var(--white)}
+.demo-booking-form>button{align-self:end}.enquiry-item{margin:15px 0}
+@media(max-width:700px){.demo-booking-form{grid-template-columns:1fr;padding:15px}}
