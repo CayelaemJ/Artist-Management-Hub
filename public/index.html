@@ -23,7 +23,12 @@
      <a href="#how-it-works" class="nav-public">How booking works</a>
      <button id="studio-nav" class="nav-studio linklike" type="button">Artist intelligence</button>
    </nav>
-   <button class="outline-button header-cta" id="nav-book" type="button">Find your artist <span aria-hidden="true">↗</span></button>
+   <div class="header-actions">
+     <button class="outline-button signin-cta" id="open-signin" type="button">Sign in ↗</button>
+     <button class="outline-button account-cta" id="my-account" type="button" hidden>My demo studio</button>
+     <button class="linklike signout-cta" id="signout-button" type="button" hidden>Sign out</button>
+     <button class="outline-button header-cta" id="nav-book" type="button">Find your artist <span aria-hidden="true">↗</span></button>
+   </div>
  </header>
 
  <main id="public-view">
@@ -85,7 +90,11 @@
  <main id="studio-view" hidden>
   <section class="studio-top section-pad">
     <div class="studio-heading"><div><span class="eyebrow">PRIVATE MANAGEMENT PLATFORM / DEMONSTRATION</span><h1>Artist <em>intelligence.</em></h1><p>Go beyond followers and headline fees. Understand business performance, reputation and creative progress.</p></div><button type="button" id="back-to-public" class="outline-button">← Back to discovery</button></div>
-    <div class="studio-nav"><button type="button" class="studio-tab active" data-panel="overview">Career dashboard</button><button type="button" class="studio-tab" data-panel="enquiries">Booking management</button><button type="button" class="studio-tab" data-panel="ai">AI advisor</button></div>
+    <div class="studio-nav"><button type="button" class="studio-tab" data-panel="demo">My workspace</button><button type="button" class="studio-tab active" data-panel="overview">Career dashboard</button><button type="button" class="studio-tab" data-panel="enquiries">Booking management</button><button type="button" class="studio-tab" data-panel="ai">AI advisor</button></div>
+    <div id="demo-panel" class="studio-panel" hidden>
+       <div class="panel-intro"><span class="eyebrow">AUTHENTICATED / FICTIONAL ACCESS ONLY</span><h2>Your personal demo workspace.</h2><p>A safe way to explore how a customer, artist or talent manager would experience CABO. No genuine bookings or finance records are exposed.</p></div>
+       <div id="demo-workspace-content" aria-live="polite"><p class="loading">Sign in to explore the workspace.</p></div>
+    </div>
     <div id="overview-panel" class="studio-panel">
       <div class="studio-bar"><div><span class="eyebrow">SELECT AN ARTIST</span><select id="studio-artist" aria-label="Choose demo artist"><option value="">Loading artists…</option></select></div><span class="synthetic-label">● SYNTHETIC DATA ONLY</span></div>
       <div id="overview-error" class="error-block" hidden></div>
@@ -106,6 +115,18 @@
  </main>
 
  <footer><div class="footer-brand"><span class="brand-mark">C✳</span><div><strong>CABO ARTIST HUB</strong><small>BEYOND THE SPOTLIGHT.</small></div></div><p>Powered by CABO Solutions. Built for people creating the next chapter.</p><span>© 2026 CABO SOLUTIONS · PROTOTYPE</span></footer>
+ <dialog id="signin-dialog" class="auth-dialog" aria-labelledby="signin-heading">
+   <form id="signin-form" class="booking-form">
+     <div class="dialog-top"><div><span class="eyebrow">CABO ARTIST HUB / DEMO ACCESS</span><h2 id="signin-heading">Welcome <em>back.</em></h2><p>Explore a fictional workspace for your role.</p></div><button id="close-signin" type="button" class="close-btn" aria-label="Close sign-in">✕</button></div>
+     <p class="auth-notice">These accounts are for demonstration only. Password <strong>12345</strong> works on the three demo roles and cannot unlock real bookings, admin actions or private data.</p>
+     <div class="role-buttons" aria-label="Choose demo account"><button class="role-choice" type="button" data-demo-email="customer.demo@cabo.test">Customer</button><button class="role-choice" type="button" data-demo-email="artist.demo@cabo.test">Artist</button><button class="role-choice" type="button" data-demo-email="manager.demo@cabo.test">Manager</button></div>
+     <label for="signin-email">Demo email</label><input id="signin-email" name="email" type="email" autocomplete="username" maxlength="160" required placeholder="customer.demo@cabo.test">
+     <label for="signin-password">Demo password</label><div class="password-entry"><input id="signin-password" name="password" type="password" autocomplete="current-password" required><button type="button" id="toggle-password" class="outline-button">Show</button></div>
+     <p id="signin-error" class="message" role="status"></p>
+     <button class="primary-button full-width" type="submit" id="signin-submit">Enter demo workspace ↗</button>
+     <p class="form-note">Production account creation will require individual strong credentials, verification and per-artist permissions. This demonstration does not register genuine users.</p>
+   </form>
+ </dialog>
  <dialog id="booking-dialog" aria-labelledby="booking-heading">
    <form id="booking-form" class="booking-form">
      <div class="dialog-top"><div><span class="eyebrow">A MOMENT IN THE MAKING</span><h2 id="booking-heading">Request a <em>booking.</em></h2><p id="booking-artist-name"></p></div><button id="close-dialog" type="button" aria-label="Close booking form" class="close-btn">✕</button></div>
