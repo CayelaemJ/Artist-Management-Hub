@@ -42,7 +42,7 @@ Visit the deployed site, choose **Sign in**, select a role and enter the demonst
 | Artist demo | `artist.demo@cabo.test` | Fictional artist goals and career checklist |
 | Manager demo | `manager.demo@cabo.test` | Fictional roster and management checklist |
 
-The password is deliberately weak for accessibility in a **non-sensitive prototype only**. It is stored as a salted scrypt hash in code; these accounts have zero access to the database's private enquiries or protected management API. Login uses temporary, HTTP-only, SameSite=Strict cookies, per-account/IP attempt limiting and two-hour in-memory sessions. Sessions expire on restart. Set `DEMO_SIGNIN_ENABLED=false` in Render when opening production accounts; **never reuse 12345 for a real artist, employee, administrator or customer account**.
+The password is deliberately weak for accessibility in a **non-sensitive prototype only**. It is stored as a salted scrypt hash in code; these accounts have zero access to the database's private enquiries or protected management API. Login uses temporary, HTTP-only, SameSite=Strict cookies, per-account/IP attempt limiting and two-hour in-memory sessions. Sessions expire on restart. Set `DEMO_SIGNIN_ENABLED=true` in Render to enable these pilot accounts. Leave it unset or set it to `false` for production; **never reuse 12345 for a real artist, employee, administrator or customer account**.
 
 Sign-in for real individual accounts, permissions/tenant isolation, identity checks, account recovery and password reset need a separate production auth implementation before any genuine artist management access is enabled. The management token mechanism is not a replacement for production RBAC.
 
