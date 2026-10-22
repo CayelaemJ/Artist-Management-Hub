@@ -16,7 +16,7 @@ const money=v=>new Intl.NumberFormat("en-ZA",{style:"currency",currency:"ZAR",ma
 const prettyDate=v=>{const d=String(v).slice(0,10);return new Date(d+"T12:00:00").toLocaleDateString("en-ZA",{day:"numeric",month:"short",year:"numeric"});};
 const PR_NAMES=["Media sentiment","Craft & achievements","Booking reliability","Reputation trajectory","Credible engagement","Industry relationships","Constructive communication"];
 const CAREER_NAMES=["Financial stability","Booking momentum","Relative audience growth","Professional development","Workload balance"];
-let artists=[],filter="all",adminToken="",currentArtist="",allowedTransitions={};
+let artists=[],filter="all",adminToken="",currentArtist="",allowedTransitions={},demoAccount=null;
 const fetchJSON=async(url,options={})=>{
  const r=await fetch(url,options);let d;
  try{d=await r.json();}catch{d={error:"Unexpected server response"};}
@@ -71,10 +71,11 @@ function resetBookingFields(){
 function showStudio(panel="overview"){
  $("public-view").hidden=true;$("studio-view").hidden=false;
  document.querySelectorAll(".studio-tab").forEach(tab=>tab.classList.toggle("active",tab.dataset.panel===panel));
- for(const id of ["overview","enquiries","ai"])$(id+"-panel").hidden=id!==panel;
+ for(const id of ["demo","overview","enquiries","ai"])$(id+"-panel").hidden=id!==panel;
  if(location.pathname!=="/studio")history.pushState({view:"studio"},"","/studio");
  window.scrollTo(0,0);
  if(panel==="overview")loadOverview();
+ if(panel==="demo")loadDemoWorkspace();
 }
 function showPublic(){
  $("studio-view").hidden=true;$("public-view").hidden=false;
@@ -143,8 +144,82 @@ async function askAI(e){
   answer.textContent=d.answer+"\n\n— AI-generated advice based on synthetic demo data. Review before using.";
  }catch(err){answer.textContent="AI not available: "+err.message;}
 }
+
+function signInDialog(){
+ $("signin-error").textContent="";
+ $("signin-password").value="";
+ $("signin-dialog").showModal();
+}
+function setDemoUI(account){
+ demoAccount=account;
+ $("open-signin").hidden=Boolean(account);
+ $("my-account").hidden=!account;
+ $("signout-button").hidden=!account;
+ $("my-account").textContent=account?"My "+account.role+" studio":"My demo studio";
+}
+async function restoreDemoSession(){
+ try{
+  const d=await fetchJSON("/api/demo-auth/me");
+  setDemoUI(d.account);
+ }catch{setDemoUI(null);}
+}
+async function loadDemoWorkspace(){
+ const root=$("demo-workspace-content");
+ if(!demoAccount){
+  root.innerHTML='<div class="demo-welcome"><h3>Sign in to your demo workspace</h3><p>Choose Customer, Artist or Manager. Each role is fully synthetic, with no access to confidential records.</p></div><button class="primary-button" id="workspace-signin" type="button">Choose an account ↗</button>';
+  $("workspace-signin").addEventListener("click",signInDialog);
+  return;
+ }
+ root.innerHTML='<p class="loading">Loading your fictional role workspace…</p>';
+ try{
+  const d=await fetchJSON("/api/demo-auth/workspace");
+  const items=d.highlights.map(x=>'<article class="demo-action"><small>'+esc(x.label.toUpperCase())+'</small><strong>'+esc(x.value)+'</strong><p>'+esc(x.detail)+'</p></article>').join("");
+  const tasks=d.activities.map(x=>'<li>'+esc(x)+'</li>').join("");
+  root.innerHTML='<div class="demo-welcome"><span class="eyebrow">'+esc(d.role)+' ACCOUNT · SYNTHETIC DEMONSTRATION</span><h3>'+esc(d.title)+'</h3><p>Signed in as '+esc(d.email)+'. None of the information below represents a real customer, artist or booking.</p></div>'+
+  '<div class="demo-actions">'+items+'</div><section class="demo-tasks"><h3>Suggested next steps</h3><ol>'+tasks+'</ol></section>'+
+  '<button class="outline-button demo-go" id="demo-explore" type="button">Explore fictional artist intelligence ↗</button>';
+  $("demo-explore").addEventListener("click",()=>showStudio("overview"));
+ }catch(e){
+  root.textContent="The demo session is unavailable: "+e.message;
+  if(/Sign in|401|unauthorized/i.test(e.message))setDemoUI(null);
+ }
+}
+async function submitDemoSignIn(e){
+ e.preventDefault();
+ const btn=$("signin-submit");btn.disabled=true;
+ $("signin-error").textContent="Signing in…";
+ try{
+  const d=await fetchJSON("/api/demo-auth/login",{
+   method:"POST",headers:{"Content-Type":"application/json"},
+   body:JSON.stringify({email:$("signin-email").value,password:$("signin-password").value})
+  });
+  $("signin-password").value="";
+  setDemoUI(d.account);
+  $("signin-dialog").close();
+  showStudio("demo");
+ }catch(err){$("signin-error").textContent="Sign-in failed: "+err.message;}
+ finally{btn.disabled=false;}
+}
+async function signOutDemo(){
+ try{await fetchJSON("/api/demo-auth/logout",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});}catch(e){console.warn("Could not confirm demo sign out; retry before using a shared device.");return;}
+ setDemoUI(null);
+ showPublic();
+}
+
 document.addEventListener("DOMContentLoaded",async()=>{
  for(const [id,fn] of [["studio-nav",()=>showStudio()],["explore-studio",()=>showStudio()],["manifesto-studio",()=>showStudio()],["back-to-public",showPublic]])$(id).addEventListener("click",fn);
+ $("open-signin").addEventListener("click",signInDialog);
+ $("my-account").addEventListener("click",()=>showStudio("demo"));
+ $("signout-button").addEventListener("click",signOutDemo);
+ $("close-signin").addEventListener("click",()=>$("signin-dialog").close());
+ $("signin-form").addEventListener("submit",submitDemoSignIn);
+ $("toggle-password").addEventListener("click",()=>{const input=$("signin-password");const visible=input.type==="password";input.type=visible?"text":"password";$("toggle-password").textContent=visible?"Hide":"Show";});
+ document.querySelectorAll("[data-demo-email]").forEach(b=>b.addEventListener("click",()=>{
+  $("signin-email").value=b.dataset.demoEmail;
+  document.querySelectorAll("[data-demo-email]").forEach(x=>x.classList.toggle("selected",x===b));
+  $("signin-password").focus();
+ }));
+ await restoreDemoSession();
  $("nav-book").addEventListener("click",()=>{showPublic();$("artists").scrollIntoView({behavior:"smooth"});});
  document.querySelectorAll(".studio-tab").forEach(tab=>tab.addEventListener("click",()=>showStudio(tab.dataset.panel)));
  $("artist-search").addEventListener("input",renderRoster);
