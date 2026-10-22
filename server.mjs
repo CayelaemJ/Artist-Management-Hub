@@ -220,4 +220,11 @@ const server=http.createServer(async(req,res)=>{
   return await staticFile(req,res,url.pathname);
  }catch(e){console.error("request failed",e?.code||e?.message||"unknown");return fail(res,500,"Service error. No data has been lost.");}
 });
-server.listen(PORT,"0.0.0.0",()=>console.log("CABO Artist Hub listening on "+PORT));
+server.listen(PORT,"0.0.0.0",async()=>{
+ console.log("CABO Artist Hub listening on "+PORT);
+ if(!pool){console.warn("Neon unavailable: DATABASE_URL not configured");return;}
+ try{
+  const test=await pool.query("SELECT COUNT(*)::int AS count FROM artists WHERE synthetic=TRUE");
+  console.log("Neon database connected; synthetic artist count: "+test.rows[0].count);
+ }catch(err){console.error("Neon connection verification failed:",err.code||err.message||"unknown");}
+});
