@@ -4,6 +4,7 @@ import path from "node:path";
 import {fileURLToPath} from "node:url";
 import crypto from "node:crypto";
 import pg from "pg";
+import {DEMO_ENABLED,findDemoUser,loginAttemptAllowed,newSession,sessionUser,endSession,sessionCookie,clearSessionCookie,demoWorkspace} from "./lib/demo-auth.mjs";
 import {weightedScore,PR_WEIGHTS,HEALTH_WEIGHTS,financialTotals} from "./lib/metrics.mjs";
 
 const root=path.dirname(fileURLToPath(import.meta.url));
@@ -165,6 +166,36 @@ async function staticFile(req,res,urlPath){
   res.writeHead(200,{...headers,"Content-Type":types[ext],"Cache-Control":ext===".html"?"no-store":"public, max-age=300"});res.end(data);
  }catch{fail(res,404,"Not found");}
 }
+async function demoLogin(req,res){
+ if(!DEMO_ENABLED)return fail(res,404,"Demo sign-in is not enabled");
+ if(!validOrigin(req))return fail(res,403,"Origin not allowed");
+ if(!String(req.headers["content-type"]||"").startsWith("application/json"))return fail(res,415,"Expected JSON");
+ let b;try{b=await body(req);}catch(e){return fail(res,400,e.message);}
+ const email=typeof b.email==="string"?b.email.slice(0,160):"";
+ if(!loginAttemptAllowed(req,email))return fail(res,429,"Too many sign-in attempts; try again later");
+ const user=findDemoUser(email,b.password);
+ if(!user)return fail(res,401,"Invalid demo credentials");
+ const token=newSession(user);
+ res.setHeader("Set-Cookie",sessionCookie(token,req));
+ return json(res,200,{signedIn:true,account:{name:user.name,email:user.email,role:user.role},demo:true,expiresInSeconds:7200});
+}
+function demoMe(req,res){
+ const u=sessionUser(req);
+ if(!u)return fail(res,401,"Sign in to a demo account");
+ return json(res,200,{signedIn:true,account:{name:u.name,email:u.email,role:u.role},demo:true});
+}
+function demoLogout(req,res){
+ if(!validOrigin(req))return fail(res,403,"Origin not allowed");
+ endSession(req);
+ res.setHeader("Set-Cookie",clearSessionCookie());
+ return json(res,200,{signedIn:false});
+}
+function myDemoWorkspace(req,res){
+ const u=sessionUser(req);
+ if(!u)return fail(res,401,"Sign in to access this demo workspace");
+ return json(res,200,demoWorkspace(u));
+}
+
 const server=http.createServer(async(req,res)=>{
  try{
   const url=new URL(req.url||"/","http://localhost");
@@ -172,6 +203,11 @@ const server=http.createServer(async(req,res)=>{
    if(!pool)return fail(res,503,"DATABASE_URL not configured");
    await pool.query("SELECT 1");return json(res,200,{status:"ok",database:"connected",demo:true,aiConfigured:Boolean(GROQ_API_KEY),adminEnabled:Boolean(ADMIN_TOKEN)});
   }
+  // Preview identities are deliberately independent of real Neon data.
+  if(req.method==="POST"&&url.pathname==="/api/demo-auth/login")return await demoLogin(req,res);
+  if(req.method==="POST"&&url.pathname==="/api/demo-auth/logout")return demoLogout(req,res);
+  if(req.method==="GET"&&url.pathname==="/api/demo-auth/me")return demoMe(req,res);
+  if(req.method==="GET"&&url.pathname==="/api/demo-auth/workspace")return myDemoWorkspace(req,res);
   if(url.pathname.startsWith("/api/")&&!pool)return fail(res,503,"Database not configured");
   if(req.method==="GET"&&url.pathname==="/api/artists")return await artists(res);
   if(req.method==="GET"&&url.pathname.startsWith("/api/demo/artist/"))return await overview(res,decodeURIComponent(url.pathname.slice("/api/demo/artist/".length)));
