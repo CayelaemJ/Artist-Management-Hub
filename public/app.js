@@ -71,7 +71,7 @@ function showPublic(){
 function scoreList(factors,names,career=false){
  return '<ul class="score-breakdown">'+names.map((n,i)=>{
   const v=Number(factors[i]);
-  return '<li><span>'+esc(n)+'</span><span class="track '+(career?"career-track":"")+'"><i style="width:'+Math.min(100,Math.max(0,v))+'%"></i></span><b>'+v+'</b></li>';
+  return '<li><span>'+esc(n)+'</span><progress class="score-progress '+(career?"career-track":"")+'" value="'+Math.min(100,Math.max(0,v))+'" max="100"></progress><b>'+v+'</b></li>';
  }).join("")+'</ul>';
 }
 function kpi(title,value,foot){
