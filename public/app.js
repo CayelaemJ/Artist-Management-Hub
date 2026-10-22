@@ -1,3 +1,15 @@
+// Public, synthetic roster fallback: no personal data and no simulated booking confirmations.
+const staticDemoArtists=[
+ {slug:"echo-dune",stage_name:"Echo Dune",genre:"Amapiano / DJ",city:"Johannesburg",tagline:"The next pulse of the city.",starting_fee_zar:6500,art_theme:"clay"},
+ {slug:"auri-sol",stage_name:"Auri Sol",genre:"Afro-pop / Live",city:"Cape Town",tagline:"Soul in full colour.",starting_fee_zar:28000,art_theme:"gold"},
+ {slug:"kinetic-moko",stage_name:"Kinetic Moko",genre:"Hip-hop / Rap",city:"Pretoria",tagline:"Made of motion.",starting_fee_zar:10000,art_theme:"teal"},
+ {slug:"velvet-umoya",stage_name:"Velvet Umoya",genre:"R&B / Soul",city:"Durban",tagline:"Soft edges. Powerful stories.",starting_fee_zar:14000,art_theme:"rust"},
+ {slug:"moya-chorus",stage_name:"Moya Chorus",genre:"Gospel / Vocal",city:"Gqeberha",tagline:"A sound that lifts.",starting_fee_zar:22000,art_theme:"clay"},
+ {slug:"milo-static",stage_name:"Milo Static",genre:"Comedy / Stand-up",city:"Johannesburg",tagline:"A new kind of punchline.",starting_fee_zar:12000,art_theme:"teal"},
+ {slug:"copper-atlas",stage_name:"Copper Atlas",genre:"Jazz / Ensemble",city:"Stellenbosch",tagline:"Improvisation without borders.",starting_fee_zar:24000,art_theme:"gold"},
+ {slug:"night-current",stage_name:"Night Current",genre:"Electronic / Producer",city:"Soweto",tagline:"Future sound, grounded roots.",starting_fee_zar:18000,art_theme:"rust"}
+];
+let publicPreviewOnly=false;
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const money=v=>new Intl.NumberFormat("en-ZA",{style:"currency",currency:"ZAR",maximumFractionDigits:0}).format(Number(v||0));
@@ -37,7 +49,8 @@ function openBooking(slug){
  $("booking-form").reset();
  $("booking-slug").value=slug;
  $("booking-artist-name").textContent=a.stage_name+" · "+a.genre;
- $("booking-status").textContent="";
+ $("booking-status").textContent=publicPreviewOnly?"Booking requests are temporarily unavailable while the live database connection is being configured. Please do not enter private details.":"";
+ $("send-enquiry").disabled=publicPreviewOnly;
  $("booking-date").min=new Date().toISOString().slice(0,10);
  $("booking-dialog").showModal();
 }
@@ -150,5 +163,13 @@ document.addEventListener("DOMContentLoaded",async()=>{
   renderRoster();
   for(const id of ["studio-artist","ai-artist"])$(id).innerHTML=artists.map(a=>'<option value="'+esc(a.slug)+'">'+esc(a.stage_name)+'</option>').join("");
   if(location.pathname==="/studio")showStudio();
- }catch(err){$("artist-grid").innerHTML="";$("artist-load-error").hidden=false;$("artist-load-error").textContent="Unable to load the artists: "+err.message;}
+ }catch(err){
+  publicPreviewOnly=true;
+  artists=staticDemoArtists;
+  renderRoster();
+  for(const id of ["studio-artist","ai-artist"])$(id).innerHTML=artists.map(a=>'<option value="'+esc(a.slug)+'">'+esc(a.stage_name)+'</option>').join("");
+  $("artist-load-error").hidden=false;
+  $("artist-load-error").textContent="Public preview mode: live database features and bookings are temporarily unavailable. This roster is fictional.";
+  if(location.pathname==="/studio")showStudio();
+ }
 });
