@@ -1,6 +1,7 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
-import {demoUsers,DEMO_ENABLED,findDemoUser,loginAttemptAllowed,newSession,sessionUser,endSession,sessionCookie,clearSessionCookie,demoWorkspace} from "../lib/demo-auth.mjs";
+process.env.DEMO_SIGNIN_ENABLED="true";
+const {demoUsers,DEMO_ENABLED,findDemoUser,loginAttemptAllowed,newSession,sessionUser,endSession,sessionCookie,clearSessionCookie,demoWorkspace}=await import("../lib/demo-auth.mjs");
 test("demo role sign-ins accept requested test password only",()=>{
  assert.equal(DEMO_ENABLED,true);
  for(const role of ["customer","artist","manager"]){
