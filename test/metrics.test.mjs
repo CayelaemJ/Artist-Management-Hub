@@ -5,7 +5,7 @@ test("pr score is weighted correctly and rejects unknown data",()=>{
  assert.equal(weightedScore([100,100,100,100,100,100,100],PR_WEIGHTS),100);
  assert.equal(weightedScore([0,0,0,0,0,0,0],PR_WEIGHTS),0);
  assert.equal(weightedScore([40],PR_WEIGHTS),null);
- assert.equal(weightedScore([null,0,0,0,0,0,0],PR_WEIGHTS),0);
+ assert.equal(weightedScore([null,0,0,0,0,0,0],PR_WEIGHTS),null);
  assert.equal(weightedScore([-1,0,0,0,0,0,0],PR_WEIGHTS),null);
 });
 test("career scores independent of raw audience size",()=>{
