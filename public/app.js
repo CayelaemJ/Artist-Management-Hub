@@ -209,9 +209,46 @@ async function restoreDemoSession(){
   setDemoUI(d.account);
  }catch{setDemoUI(null);}
 }
+
+async function loadDemoBookings(){
+ const area=$("demo-booking-area"),list=$("demo-booking-list");
+ if(!demoAccount){area.hidden=true;return;}
+ area.hidden=false;
+ $("demo-booking-artist").innerHTML=artists.map(a=>'<option value="'+esc(a.slug)+'">'+esc(a.stage_name)+'</option>').join("");
+ $("demo-booking-date").min=new Date().toISOString().slice(0,10);
+ if(!$("demo-booking-date").value)$("demo-booking-date").value=new Date(Date.now()+7*86400000).toISOString().slice(0,10);
+ if(demoAccount.role!=="manager"){list.innerHTML='<p class="form-note">Create a fictional enquiry here, then sign in as Manager to review and advance its status.</p>';return;}
+ try{
+  const d=await fetchJSON("/api/demo-bookings");
+  list.innerHTML='<h3>Demo enquiry pipeline ('+d.enquiries.length+')</h3>'+ (d.enquiries.map(x=>{
+   const transitions=d.allowedTransitions[x.status]||[];
+   return '<article class="enquiry-item"><h3>'+esc(x.stage_name)+' · '+esc(x.event_type)+'</h3><p>'+prettyDate(x.event_date)+' · '+esc(x.venue)+'</p><p>Demo customer: '+esc(x.contact_name)+' · '+esc(x.customer_email)+'</p><p>Budget: '+(x.budget_zar===null?"Not supplied":money(x.budget_zar))+'</p><p>STATUS: <span class="status-pill">'+esc(x.status)+'</span></p>'+
+   (transitions.length?'<div class="actions"><select data-demo-next="'+esc(x.id)+'" aria-label="Next demo status">'+transitions.map(v=>'<option value="'+esc(v)+'">'+esc(v.replaceAll("_"," "))+'</option>').join("")+'</select><button type="button" data-demo-update="'+esc(x.id)+'">Update demo status ↗</button></div>':'')+'</article>';
+  }).join("")||'<p class="loading">No demo enquiries yet. Create one with the form above.</p>');
+  list.querySelectorAll("[data-demo-update]").forEach(button=>button.addEventListener("click",async()=>{
+   const id=button.dataset.demoUpdate;
+   const status=list.querySelector('[data-demo-next="'+id+'"]').value;
+   button.disabled=true;
+   try{await fetchJSON("/api/demo-bookings/"+encodeURIComponent(id),{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({status})});$("demo-booking-message").textContent="Demo booking advanced to "+status.replaceAll("_"," ");await loadDemoBookings();}
+   catch(err){$("demo-booking-message").textContent=err.message;button.disabled=false;}
+  }));
+ }catch(err){list.textContent="Unable to retrieve demo bookings: "+err.message;}
+}
+async function sendDemoBooking(e){
+ e.preventDefault();
+ const button=e.currentTarget.querySelector('button[type="submit"]');button.disabled=true;
+ try{
+  const d=await fetchJSON("/api/demo-bookings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({artistSlug:$("demo-booking-artist").value,eventType:$("demo-booking-type").value,date:$("demo-booking-date").value,venue:$("demo-booking-venue").value,budget:$("demo-booking-budget").value})});
+  $("demo-booking-message").textContent="Saved to Neon: "+d.reference+" — "+d.message;
+  await loadDemoBookings();
+ }catch(err){$("demo-booking-message").textContent="Could not save demo booking: "+err.message;}
+ finally{button.disabled=false;}
+}
+
 async function loadDemoWorkspace(){
  const root=$("demo-workspace-content");
  if(!demoAccount){
+  $("demo-booking-area").hidden=true;
   root.innerHTML='<div class="demo-welcome"><h3>Sign in to your demo workspace</h3><p>Choose Customer, Artist or Manager. Each role is fully synthetic, with no access to confidential records.</p></div><button class="primary-button" id="workspace-signin" type="button">Choose an account ↗</button>';
   $("workspace-signin").addEventListener("click",signInDialog);
   return;
@@ -225,6 +262,7 @@ async function loadDemoWorkspace(){
   '<div class="demo-actions">'+items+'</div><section class="demo-tasks"><h3>Suggested next steps</h3><ol>'+tasks+'</ol></section>'+
   '<button class="outline-button demo-go" id="demo-explore" type="button">Explore fictional artist intelligence ↗</button>';
   $("demo-explore").addEventListener("click",()=>showStudio("overview"));
+  await loadDemoBookings();
  }catch(e){
   root.textContent="The demo session is unavailable: "+e.message;
   if(/Sign in|401|unauthorized/i.test(e.message))setDemoUI(null);
@@ -259,6 +297,7 @@ document.addEventListener("DOMContentLoaded",async()=>{
  $("signout-button").addEventListener("click",signOutDemo);
  $("close-signin").addEventListener("click",()=>$("signin-dialog").close());
  $("signin-form").addEventListener("submit",submitDemoSignIn);
+ $("demo-booking-form").addEventListener("submit",sendDemoBooking);
  $("toggle-password").addEventListener("click",()=>{const input=$("signin-password");const visible=input.type==="password";input.type=visible?"text":"password";$("toggle-password").textContent=visible?"Hide":"Show";});
  document.querySelectorAll("[data-demo-email]").forEach(b=>b.addEventListener("click",()=>{
   $("signin-email").value=b.dataset.demoEmail;
