@@ -91,17 +91,63 @@ function scoreList(factors,names,career=false){
 function kpi(title,value,foot){
  return '<article class="metric-card"><span>'+esc(title)+'</span><strong>'+esc(value)+'</strong><small>'+esc(foot)+'</small></article>';
 }
+
+const DEMO_SCORES=[
+ [[73,80,86,76,70,78,82],[72,81,79,91,75]],
+ [[84,88,92,80,86,82,90],[65,88,80,81,69]],
+ [[67,83,77,70,73,84,70],[61,76,80,92,78]],
+ [[88,90,89,84,78,91,86],[76,78,86,83,82]],
+ [[91,85,94,87,83,91,94],[81,85,74,78,86]],
+ [[79,74,86,75,78,80,76],[68,90,84,81,64]],
+ [[88,92,94,91,84,85,92],[85,76,71,94,80]],
+ [[81,85,88,79,79,87,80],[74,83,87,89,70]]
+];
+const demoWeights={pr:[20,15,15,15,10,15,10],health:[30,25,15,20,10]};
+function demoScore(nums,weights){
+ if(!Array.isArray(nums)||nums.length!==weights.length||nums.some(n=>!Number.isFinite(n)))return null;
+ return Math.round(nums.reduce((total,n,i)=>total+n*weights[i],0)/weights.reduce((a,b)=>a+b,0));
+}
+function demoOverview(slug){
+ const index=staticDemoArtists.findIndex(a=>a.slug===slug);
+ if(index<0)throw Error("Artist not found");
+ const artist=staticDemoArtists[index],factors=DEMO_SCORES[index];
+ const fee=artist.starting_fee_zar,expense=Math.round(fee*.37),futureExpense=Math.round(fee*.3);
+ return {
+  demo:true,localPreview:true,artist,
+  pr:{score:demoScore(factors[0],demoWeights.pr),factors:factors[0],weights:demoWeights.pr,confidence:"Synthetic illustration; no live listening"},
+  career:{score:demoScore(factors[1],demoWeights.health),factors:factors[1],weights:demoWeights.health,confidence:"Synthetic illustration; not a validated wellbeing metric"},
+  financial:{actualRevenue:Math.round(fee*.9),actualExpenses:expense,actualProfit:Math.round(fee*.9)-expense,confirmedFuture:fee,openOpportunities:0},
+  gigs:[{event_date:"2026-09-18",event_name:"City Sessions / DEMO",fee_zar:Math.round(fee*.9),expense_zar:expense,status:"completed"},
+        {event_date:"2026-11-18",event_name:"Nights in Sound / DEMO",fee_zar:fee,expense_zar:futureExpense,status:"confirmed"}],
+  mentions:[{platform:"Simulated press",topic:"Creative performance discussion (fictional)",sentiment:"positive"},
+            {platform:"Simulated audience",topic:"Fictional listener response",sentiment:"mixed"}]
+ };
+}
+function dashboardNotes(d){
+ const score=d.pr.score,health=d.career.score;
+ const lowPR=d.pr.factors.map((v,i)=>({v,label:PR_NAMES[i]})).sort((a,b)=>a.v-b.v)[0];
+ const lowCareer=d.career.factors.map((v,i)=>({v,label:CAREER_NAMES[i]})).sort((a,b)=>a.v-b.v)[0];
+ return '<section class="dash-card dashboard-wide"><h3>Career guidance & next steps</h3><p>Illustrative suggestions inferred from fictional scores, not conclusions about a real person.</p><div class="insight-grid">'+
+ '<article><span class="eyebrow">REPUTATION OPPORTUNITY</span><strong>'+esc(lowPR.label)+'</strong><p>Lowest synthetic PR dimension ('+lowPR.v+'/100). Validate evidence with the artist before setting any reputation action.</p></article>'+
+ '<article><span class="eyebrow">CAREER OPPORTUNITY</span><strong>'+esc(lowCareer.label)+'</strong><p>Lowest synthetic Career Health dimension ('+lowCareer.v+'/100). Discuss personal goals and support needs rather than comparing follower counts.</p></article>'+
+ '<article><span class="eyebrow">FINANCIAL PLANNING</span><strong>'+money(d.financial.confirmedFuture)+'</strong><p>Illustrative confirmed future fees. This is not money received, a tax provision or a profit forecast.</p></article>'+
+ '</div><p class="fineprint">Model: fixed transparent weighted indices • PR '+score+'/100 • Career '+health+'/100 • Synthetic coverage and confidence only • No live social sources</p></section>';
+}
+
 async function loadOverview(){
  const slug=$("studio-artist").value||artists[0]?.slug;if(!slug)return;
  currentArtist=slug;
  $("overview-content").innerHTML='<p class="loading">Reading synthetic demo metrics…</p>';
  $("overview-error").hidden=true;
  try{
-  const d=await fetchJSON("/api/demo/artist/"+encodeURIComponent(slug));
+  let d;
+  try { d=await fetchJSON("/api/demo/artist/"+encodeURIComponent(slug)); }
+  catch(e){ if(!publicPreviewOnly)throw e; d=demoOverview(slug); }
   const p=d.pr,h=d.career,f=d.financial;
+  const previewNotice=d.localPreview?'<div class="dashboard-preview">DEMO PREVIEW — database unavailable. All data below is calculated locally from fictional examples; no live bookings, social listening or financial records.</div>':'<div class="dashboard-preview">SYNTHETIC DATA FROM DATABASE — not actual artist income, social listening or a validated PR assessment.</div>';
   const gigs=d.gigs.map(g=>'<div class="gig-row"><div><strong>'+esc(g.event_name)+'</strong><br><span>'+prettyDate(g.event_date)+'</span></div><div style="text-align:right"><strong>'+money(g.fee_zar)+'</strong><br><span class="status-pill">'+esc(g.status)+'</span></div></div>').join("");
   const social=d.mentions.map(m=>'<div class="mention-row"><div><strong>'+esc(m.platform)+'</strong><br><span>'+esc(m.topic)+'</span></div><span class="status-pill">'+esc(m.sentiment)+'</span></div>').join("");
-  $("overview-content").innerHTML='<div class="metrics-grid">'+
+  $("overview-content").innerHTML=previewNotice+'<div class="metrics-grid">'+
     kpi("COMPLETED GIG REVENUE",money(f.actualRevenue),"SYNTHETIC / HISTORICAL")+
     kpi("COSTS OF COMPLETED GIGS",money(f.actualExpenses),"SYNTHETIC EXPENSES")+
     kpi("PROFIT ON COMPLETED GIGS",money(f.actualProfit),"REVENUE LESS COSTS")+
@@ -109,7 +155,7 @@ async function loadOverview(){
     '</div><div class="dashboard-cols"><section class="dash-card"><h3>Reputation & PR</h3><p>Illustrative weighted score. This is not a factual public judgement.</p><div class="score-head"><div><span class="eyebrow">PR INTELLIGENCE</span><p>Confidence: demo-only</p></div><div class="score-circle"><strong>'+esc(p.score)+'</strong><small>OUT OF 100</small></div></div>'+scoreList(p.factors,PR_NAMES)+'</section>'+
     '<section class="dash-card"><h3>Career Health</h3><p>Separate from fame: a sustainability and personal-progress illustration.</p><div class="score-head"><div><span class="eyebrow">CAREER DEVELOPMENT</span><p>Confidence: demo-only</p></div><div class="score-circle career"><strong>'+esc(h.score)+'</strong><small>OUT OF 100</small></div></div>'+scoreList(h.factors,CAREER_NAMES,true)+'</section>'+
     '<section class="dash-card"><h3>Performance calendar</h3><p>Simulated historical and upcoming bookings; upcoming fees are not paid revenue.</p>'+gigs+'</section>'+
-    '<section class="dash-card"><h3>Social listening signals</h3><p>These are fictional examples, not live API data. Monitoring connectors are not yet connected.</p>'+social+'</section></div>';
+    '<section class="dash-card"><h3>Social listening signals</h3><p>These are fictional examples, not live API data. Monitoring connectors are not yet connected.</p>'+social+'</section></div>'+dashboardNotes(d);
  }catch(err){$("overview-content").innerHTML="";$("overview-error").hidden=false;$("overview-error").textContent=err.message;}
 }
 async function loadEnquiries(){
