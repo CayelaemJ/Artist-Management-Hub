@@ -28,6 +28,6 @@ Requires Node.js 20+ and a PostgreSQL 18 database.
 
 ## Render deployment
 
-Create a Node web service from this repo/branch (`npm install --omit=dev`, `npm start`), set `DATABASE_URL`, `ADMIN_TOKEN`, and optionally `GROQ_API_KEY` in Render **secret environment variables**. Service listens on `PORT` (defaults to 10000). `/api/health` checks database connectivity. Default deployment region should be Frankfurt to match Neon.
+Create a Node web service from this repo/branch (`npm install --omit=dev`, `npm start`), set `DATABASE_URL`, a long random management `ADMIN_TOKEN` you know, and optionally `GROQ_API_KEY` in Render **secret environment variables**. Service listens on `PORT` (defaults to 10000). `/api/health` checks database connectivity. Default deployment region should be Frankfurt to match Neon.
 
 For production, replace the prototype admin-token access with multi-tenant session/RBAC auth, invite workflows and a full security review before accepting real contracts or finances. Social listening in this version is **synthetic only**.
