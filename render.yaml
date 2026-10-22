@@ -1,0 +1,25 @@
+# Deploy with Render Blueprint after selecting the intended Render workspace.
+# Secrets stay in Render, never in Git.
+services:
+  - type: web
+    name: cabo-artist-hub
+    runtime: node
+    plan: free
+    region: frankfurt
+    repo: https://github.com/CayelaemJ/Artist-Management-Hub
+    branch: feat/cabo-artist-hub-mvp
+    autoDeployTrigger: commit
+    buildCommand: npm install --omit=dev
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: ADMIN_TOKEN
+        generateValue: true
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: llama-3.3-70b-versatile
