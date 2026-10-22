@@ -12,7 +12,10 @@ const DATABASE_URL=process.env.DATABASE_URL;
 const ADMIN_TOKEN=process.env.ADMIN_TOKEN||"";
 const GROQ_API_KEY=process.env.GROQ_API_KEY||"";
 const GROQ_MODEL=process.env.GROQ_MODEL||"llama-3.3-70b-versatile";
-const pool=DATABASE_URL?new pg.Pool({connectionString:DATABASE_URL,ssl:{rejectUnauthorized:true},max:5,connectionTimeoutMillis:8000,idleTimeoutMillis:30000}):null;
+const dbUrl=DATABASE_URL?new URL(DATABASE_URL):null;
+// Remove URL SSL options that would override the verified TLS settings below.
+if(dbUrl){dbUrl.searchParams.delete("sslmode");dbUrl.searchParams.delete("sslcert");dbUrl.searchParams.delete("sslkey");dbUrl.searchParams.delete("sslrootcert");}
+const pool=dbUrl?new pg.Pool({connectionString:dbUrl.toString(),ssl:{rejectUnauthorized:true},max:5,connectionTimeoutMillis:8000,idleTimeoutMillis:30000}):null;
 const buckets=new Map();
 const transitions={
   enquiry:["availability_check","declined","cancelled"],
