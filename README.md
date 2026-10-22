@@ -46,3 +46,7 @@ The password is deliberately weak for accessibility in a **non-sensitive prototy
 
 Sign-in for real individual accounts, permissions/tenant isolation, identity checks, account recovery and password reset need a separate production auth implementation before any genuine artist management access is enabled. The management token mechanism is not a replacement for production RBAC.
 
+
+## Dashboard demonstration (October 2026)
+
+Open `/studio`, choose **Career dashboard**, and select one of the eight fictional artists. The comprehensive prototype view includes weighted PR and Career Health indices, individual factor breakdowns, completed-gig revenue and expenses, profit, confirmed future fees, sample gigs and social mentions, and transparent recommendations. When `DATABASE_URL` is unavailable, the screen automatically displays a clearly labelled **local synthetic preview**; the booking form remains unavailable until persistence is configured. All demo values are illustrative, not factual achievements, real revenue, live social listening, or medical/psychological assessment.
