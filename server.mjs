@@ -288,7 +288,7 @@ async function accountRegister(req,res){
  let pass;try{pass=hashPassword(b.password);}catch(e){return fail(res,400,e.message);}
  try{
   const r=await pool.query("INSERT INTO hub_accounts(email,password_hash,display_name,role) VALUES($1,$2,$3,$4) RETURNING id,email,display_name,role",[email,pass,name,role]);
-  return json(res,201,{account:r.rows[0],message:"Account created. Verification and artist ownership approval are required before access to private artist records."});
+  return json(res,201,{account:r.rows[0],message:"Account created, pending superadmin verification and approval. No private artist access is granted yet."});
  }catch(e){if(e.code==="23505")return fail(res,409,"Account already exists");throw e;}
 }
 async function accountLogin(req,res){
@@ -356,6 +356,23 @@ async function draftInvoice(req,res){
  return json(res,201,{invoice:r.rows[0],notice:"Draft invoice only. No payment was charged or collected."});
 }
 
+
+async function pendingAccounts(req,res){
+ if(!superadminUser(req))return fail(res,403,"Superadmin access required");
+ const r=await pool.query("SELECT id,email,display_name,role,verified_at,created_at FROM hub_accounts WHERE disabled_at IS NULL ORDER BY created_at DESC LIMIT 100");
+ return json(res,200,{accounts:r.rows,notice:"Verification approval is an administrative manual check; validate identity and email ownership out of band before activation."});
+}
+async function approveAccount(req,res,id){
+ if(!superadminUser(req))return fail(res,403,"Superadmin access required");
+ if(!validOrigin(req))return fail(res,403,"Origin not allowed");
+ if(!/^[0-9a-f-]{36}$/i.test(id))return fail(res,400,"Invalid account ID");
+ let b;try{b=await body(req);}catch(e){return fail(res,400,e.message);}
+ if(b.confirm!==true)return fail(res,400,"Explicit verification confirmation required");
+ const r=await pool.query("UPDATE hub_accounts SET verified_at=now() WHERE id=$1 AND disabled_at IS NULL AND verified_at IS NULL RETURNING id,email,role,verified_at",[id]);
+ if(!r.rowCount)return fail(res,404,"Pending account not found");
+ return json(res,200,{account:r.rows[0],notice:"Superadmin manually approved account; ensure email ownership was independently verified."});
+}
+
 const server=http.createServer(async(req,res)=>{
  try{
   const url=new URL(req.url||"/","http://localhost");
@@ -375,6 +392,8 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==="POST"&&url.pathname==="/api/accounts/logout")return accountLogout(req,res);
   if(req.method==="GET"&&url.pathname==="/api/accounts/artists")return myArtistAccess(req,res);
   if(req.method==="GET"&&url.pathname==="/api/ops/summary")return opsSummary(req,res);
+  if(req.method==="GET"&&url.pathname==="/api/ops/accounts")return pendingAccounts(req,res);
+  if(req.method==="POST"&&url.pathname.startsWith("/api/ops/accounts/")&&url.pathname.endsWith("/approve"))return approveAccount(req,res,url.pathname.slice("/api/ops/accounts/".length,-"/approve".length));
   if(req.method==="GET"&&url.pathname==="/api/ops/finance")return financeWorkspace(req,res);
   if(req.method==="POST"&&url.pathname==="/api/ops/contracts")return draftContract(req,res);
   if(req.method==="POST"&&url.pathname==="/api/ops/invoices")return draftInvoice(req,res);
