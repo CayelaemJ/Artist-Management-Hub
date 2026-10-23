@@ -4,6 +4,7 @@ import path from "node:path";
 import {fileURLToPath} from "node:url";
 import crypto from "node:crypto";
 import pg from "pg";
+import {requestClientIp} from "./lib/request-identity.mjs";
 import {verifyYocoWebhook} from "./lib/yoco-webhooks.mjs";
 import {localCareerGuidance} from "./lib/advice.mjs";
 import {hashPassword,verifyPassword,tokenHash,issueToken,accountCookie,clearAccountCookie,extractAccountCookie} from "./lib/account-auth.mjs";
@@ -49,8 +50,7 @@ function authorised(req){
 }
 function rateLimit(req,key,max,windowMs){
  // Never trust caller-controlled forwarded headers unless the reverse proxy rewrites them.
- const forwarded=String(req.headers["x-forwarded-for"]||"").split(",")[0].trim();
- const ip=(process.env.TRUST_PROXY_HOPS==="1"&&forwarded?forwarded:String(req.socket.remoteAddress||"unknown")).slice(0,100);
+ const ip=requestClientIp(req).slice(0,100);
  const id=key+":"+ip, now=Date.now();
  if(buckets.size>=50000) for(const [k,v] of buckets) if(v.reset<=now) buckets.delete(k);
  if(buckets.size>=50000&&!buckets.has(id))return false; // bounded, fail-closed
