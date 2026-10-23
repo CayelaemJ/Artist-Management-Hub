@@ -145,6 +145,15 @@
  </main>
 
  <footer><div class="footer-brand"><span class="brand-mark">C✳</span><div><strong>CABO ARTIST HUB</strong><small>BEYOND THE SPOTLIGHT.</small></div></div><p>Powered by CABO Solutions. Built for people creating the next chapter.</p><span>© 2026 CABO SOLUTIONS · PROTOTYPE</span></footer>
+ <dialog id="real-login-dialog" class="auth-dialog" aria-labelledby="real-login-heading">
+   <form id="real-login-form" class="booking-form">
+     <div class="dialog-top"><div><span class="eyebrow">CABO ARTIST HUB / VERIFIED MEMBERS</span><h2 id="real-login-heading">Your <em>account.</em></h2><p>Use your personal credentials after superadmin identity approval.</p></div><button id="close-real-login" class="close-btn" type="button" aria-label="Close login">✕</button></div>
+     <label for="real-login-email">Email</label><input id="real-login-email" type="email" autocomplete="username" required>
+     <label for="real-login-password">Password</label><input id="real-login-password" type="password" autocomplete="current-password" required>
+     <p id="real-login-message" class="message" role="status"></p>
+     <button class="primary-button full-width" type="submit">Sign in to verified account ↗</button>
+   </form>
+ </dialog>
  <dialog id="real-account-dialog" class="auth-dialog" aria-labelledby="real-account-heading">
  <form id="real-account-form" class="booking-form">
   <div class="dialog-top"><div><span class="eyebrow">PRODUCTION ACCOUNTS / RESTRICTED PILOT</span><h2 id="real-account-heading">Create your <em>account.</em></h2><p>Individual accounts have no access to artist private data before verification and permission approval.</p></div><button id="close-real-account" class="close-btn" type="button" aria-label="Close account registration">✕</button></div>
@@ -158,6 +167,7 @@
  <dialog id="signin-dialog" class="auth-dialog" aria-labelledby="signin-heading">
    <form id="signin-form" class="booking-form">
      <div class="dialog-top"><div><span class="eyebrow">CABO ARTIST HUB / DEMO ACCESS</span><h2 id="signin-heading">Welcome <em>back.</em></h2><p>Explore a fictional workspace for your role.</p></div><button id="close-signin" type="button" class="close-btn" aria-label="Close sign-in">✕</button></div>
+     <button id="open-real-login" type="button" class="outline-button">Sign in to an approved customer / artist account ↗</button>
      <button id="open-real-account" type="button" class="outline-button">Register a real account (pending verification) ↗</button><p class="auth-notice">These accounts are for demonstration only. Password <strong>12345</strong> works on the three demo roles and cannot unlock real bookings, admin actions or private data.</p>
      <div class="role-buttons" aria-label="Choose demo account"><button class="role-choice" type="button" data-demo-email="customer.demo@cabo.test">Customer</button><button class="role-choice" type="button" data-demo-email="artist.demo@cabo.test">Artist</button><button class="role-choice" type="button" data-demo-email="manager.demo@cabo.test">Manager</button></div>
      <label for="signin-email">Demo email</label><input id="signin-email" name="email" type="email" autocomplete="username" maxlength="160" required placeholder="customer.demo@cabo.test">
