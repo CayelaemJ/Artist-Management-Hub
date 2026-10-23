@@ -12,6 +12,7 @@
  <script src="/app.js" defer></script>
 </head>
 <body>
+ <p id="verification-banner" class="form-note" role="status" hidden style="padding:12px 24px"></p>
  <div class="demo-ribbon">CABO ARTIST HUB <span class="dot"></span> EARLY DEMONSTRATION <span class="dot"></span> FICTIONAL ARTISTS & SYNTHETIC INSIGHTS</div>
  <header class="site-header">
    <a class="brand" href="/" aria-label="CABO Artist Hub home">
@@ -161,7 +162,8 @@
   <label for="real-email">Email address</label><input id="real-email" name="email" type="email" required maxlength="254" autocomplete="email">
   <label for="real-role">Account type</label><select id="real-role" name="role" required><option value="customer">Customer</option><option value="artist">Artist</option></select>
   <label for="real-password">Password (minimum 12 characters)</label><input id="real-password" name="password" type="password" required minlength="12" maxlength="128" autocomplete="new-password">
-  <p class="form-note">This pilot records your registration but cannot activate access until the verification service and approval workflow are configured. Do not use this for urgent bookings.</p>
+  <p class="form-note">A verification email is sent only when email delivery is configured. Otherwise CABO staff must verify your email ownership manually. Artist access also requires management approval.</p>
+ <button id="resend-email-verification" class="outline-button" type="button">Resend email verification ↗</button>
   <p id="real-account-message" class="message" role="status"></p><button class="primary-button full-width" type="submit">Create pending account ↗</button>
  </form></dialog>
  <dialog id="signin-dialog" class="auth-dialog" aria-labelledby="signin-heading">
