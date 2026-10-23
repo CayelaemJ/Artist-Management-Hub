@@ -191,10 +191,21 @@ async function submitDraftInvoice(e){
 }
 
 
+
+async function grantMembership(e){
+ e.preventDefault();
+ const msg=$("membership-message");msg.textContent="Assigning scoped artist access…";
+ try{
+  const result=await fetchJSON("/api/ops/memberships",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({accountId:$("membership-account").value,artistSlug:$("membership-artist").value,accessRole:$("membership-role").value})});
+  msg.textContent=result.notice;
+ }catch(err){msg.textContent=err.message;}
+}
+
 async function loadPendingAccounts(){
  const root=$("pending-accounts");
  try{
   const d=await fetchJSON("/api/ops/accounts");
+  $("membership-artist").innerHTML=artists.map(a=>'<option value="'+esc(a.slug)+'">'+esc(a.stage_name)+'</option>').join("");
   root.innerHTML=d.accounts.map(a=>'<article class="enquiry-item"><h3>'+esc(a.display_name)+'</h3><p>'+esc(a.email)+' · '+esc(a.role)+'</p><p>'+ (a.verified_at?'APPROVED':'PENDING VERIFICATION')+'</p>'+(!a.verified_at?'<button class="outline-button" data-approve-account="'+esc(a.id)+'" type="button">Approve after independent verification ↗</button>':'')+'</article>').join("")||'<p class="loading">No registered accounts.</p>';
   root.querySelectorAll("[data-approve-account]").forEach(btn=>btn.addEventListener("click",async()=>{
    if(!confirm("Confirm that you independently verified identity and email ownership for this account?"))return;
@@ -387,6 +398,7 @@ document.addEventListener("DOMContentLoaded",async()=>{
  $("close-real-account").addEventListener("click",()=>$("real-account-dialog").close());
  $("real-account-form").addEventListener("submit",registerRealAccount);
  $("operations-refresh").addEventListener("click",loadOperations);
+ $("membership-form").addEventListener("submit",grantMembership);
  $("contract-draft-form").addEventListener("submit",submitDraftContract);
  $("invoice-draft-form").addEventListener("submit",submitDraftInvoice);
  $("demo-booking-form").addEventListener("submit",sendDemoBooking);
