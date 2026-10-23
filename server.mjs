@@ -461,10 +461,10 @@ async function queueBookingNotification(req,res){
 async function socialReadiness(req,res){
  if(!superadminUser(req))return fail(res,403,"Superadmin required");
  const [connections,metrics]=await Promise.all([
-  pool.query("SELECT sc.id,sc.platform,sc.provider_account_ref,sc.granted_scopes,sc.last_synced_at,a.stage_name FROM social_provider_connections sc JOIN artists a ON a.id=sc.artist_id ORDER BY sc.connected_at DESC LIMIT 50"),
+  pool.query("SELECT sc.id,sc.platform,sc.provider_account_ref,sc.granted_scopes,sc.last_synced_at,a.stage_name,(SELECT sm.followers FROM social_provider_metrics sm WHERE sm.connection_id=sc.id AND sm.source_kind='official_api' ORDER BY sm.observed_at DESC LIMIT 1) AS latest_followers FROM social_provider_connections sc JOIN artists a ON a.id=sc.artist_id ORDER BY sc.connected_at DESC LIMIT 50"),
   pool.query("SELECT platform,COUNT(*)::int AS linked_accounts FROM social_provider_connections GROUP BY platform ORDER BY platform")
  ]);
- return json(res,200,{connections:connections.rows,platforms:metrics.rows,liveDataAvailable:connections.rowCount>0,notice:"Only approved, consented official API connections count as live. Synthetic sentiment inputs are not live analytics."});
+ return json(res,200,{connections:connections.rows,platforms:metrics.rows,liveDataAvailable:connections.rows.some(x=>Boolean(x.last_synced_at)),notice:"Only approved, consented official API connections count as live. Synthetic sentiment inputs are not live analytics."});
 }
 
 
@@ -559,6 +559,46 @@ async function resendVerification(req,res){
  return json(res,200,{message:"If the account is eligible and email delivery is configured, a verification link has been sent."});
 }
 
+
+async function youtubeConnect(req,res){
+ if(!superadminUser(req))return fail(res,403,"Superadmin required");
+ if(!validOrigin(req))return fail(res,403,"Origin not allowed");
+ let b;try{b=await body(req);}catch(e){return fail(res,400,e.message);}
+ const slug=text(b.artistSlug,100),channel=text(b.channelId,100);
+ if(b.consentConfirmed!==true||!/^UC[A-Za-z0-9_-]{22}$/.test(channel)||!slug)return fail(res,400,"Artist consent confirmation and valid YouTube channel ID required");
+ const r=await pool.query("INSERT INTO social_provider_connections(artist_id,platform,provider_account_ref,token_secret_ref,granted_scopes) SELECT id,'youtube', $2,'env:YOUTUBE_API_KEY',ARRAY['public_channel_statistics']::text[] FROM artists WHERE slug=$1 ON CONFLICT(artist_id,platform,provider_account_ref) DO UPDATE SET token_secret_ref=EXCLUDED.token_secret_ref RETURNING id",[slug,channel]);
+ if(!r.rowCount)return fail(res,404,"Artist not found");
+ return json(res,201,{connectionId:r.rows[0].id,status:"connected_pending_first_sync",notice:"YouTube source registered. Only successful official API reads count as live data."});
+}
+async function youtubeSync(req,res,id){
+ if(!superadminUser(req))return fail(res,403,"Superadmin required");
+ if(!validOrigin(req))return fail(res,403,"Origin not allowed");
+ if(!/^[a-f0-9-]{36}$/i.test(id))return fail(res,400,"Invalid connection ID");
+ const key=process.env.YOUTUBE_API_KEY;
+ if(!key)return fail(res,503,"YOUTUBE_API_KEY not configured; official API sync is unavailable");
+ if(!rateLimit(req,"social-sync",8,3600000))return fail(res,429,"Too many social provider syncs");
+ const connection=await pool.query("SELECT id,provider_account_ref FROM social_provider_connections WHERE id=$1 AND platform='youtube'",[id]);
+ if(!connection.rowCount)return fail(res,404,"YouTube connection not found");
+ const channel=connection.rows[0].provider_account_ref;
+ const query=new URL("https://www.googleapis.com/youtube/v3/channels");
+ query.searchParams.set("part","statistics");
+ query.searchParams.set("id",channel);
+ query.searchParams.set("key",key);
+ const controller=new AbortController(),abort=setTimeout(()=>controller.abort(),10000);
+ let response;
+ try{response=await fetch(query,{signal:controller.signal});}
+ catch{return fail(res,502,"YouTube API unreachable");}
+ finally{clearTimeout(abort);}
+ if(!response.ok)return fail(res,502,"Official YouTube API rejected the request ("+response.status+")");
+ const j=await response.json(),st=j.items?.[0]?.statistics;
+ if(!st)return fail(res,404,"YouTube channel statistics not returned");
+ const subs=st.hiddenSubscriberCount?null:Number(st.subscriberCount);
+ if(subs!==null&&(!Number.isSafeInteger(subs)||subs<0))return fail(res,502,"YouTube returned invalid statistics");
+ const saved=await pool.query("INSERT INTO social_provider_metrics(connection_id,observed_at,followers,source_kind) VALUES($1,now(),$2,'official_api') RETURNING observed_at,followers",[id,subs]);
+ await pool.query("UPDATE social_provider_connections SET last_synced_at=$1 WHERE id=$2",[saved.rows[0].observed_at,id]);
+ return json(res,200,{platform:"youtube",observedAt:saved.rows[0].observed_at,subscriberCount:subs,source:"official_api",note:"Public subscriber count only; impressions and reach require separate authorized analytics scopes."});
+}
+
 const server=http.createServer(async(req,res)=>{
  try{
   const url=new URL(req.url||"/","http://localhost");
@@ -586,6 +626,8 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==="GET"&&url.pathname==="/api/ops/history")return operationalHistory(req,res);
   if(req.method==="GET"&&url.pathname==="/api/ops/notifications")return opsNotifications(req,res);
   if(req.method==="GET"&&url.pathname==="/api/ops/social")return socialReadiness(req,res);
+  if(req.method==="POST"&&url.pathname==="/api/ops/social/youtube/connect")return youtubeConnect(req,res);
+  if(req.method==="POST"&&/^\/api\/ops\/social\/youtube\/[a-f0-9-]{36}\/sync$/i.test(url.pathname))return youtubeSync(req,res,url.pathname.split("/")[5]);
   if(req.method==="POST"&&url.pathname==="/api/ops/notifications")return queueBookingNotification(req,res);
   if(req.method==="GET"&&url.pathname==="/api/ops/accounts")return pendingAccounts(req,res);
   if(req.method==="POST"&&url.pathname==="/api/ops/memberships")return grantArtistMembership(req,res);
