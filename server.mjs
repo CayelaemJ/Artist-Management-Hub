@@ -403,7 +403,6 @@ async function accountCustomerBookings(req,res){
  const a=await accountSession(req);
  if(!a)return fail(res,401,"Account sign-in required");
  if(a.role!=="customer")return fail(res,403,"Customer account required");
- const r=await pool.query("SELECT b.id,b.event_type,b.event_date,b.venue,b.status,b.created_at,artist.stage_name FROM booking_enquiries b JOIN artists artist ON artist.id=b.artist_id WHERE lower(b.contact_email)=$1 ORDER BY b.created_at DESC LIMIT 100",[a.email]);
  // Historical enquiries are not exposed by email alone: require an ownership proof workflow.
  return json(res,200,{bookings:[],verificationRequired:true,message:"Booking ownership must be verified before historical enquiries can be linked to your account."});
 }
