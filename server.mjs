@@ -337,7 +337,7 @@ async function opsSummary(req,res){
 async function financeWorkspace(req,res){
  if(!superadminUser(req))return fail(res,403,"Superadmin required");
  const [contracts,invoices]=await Promise.all([
-  pool.query("SELECT c.id,c.booking_id,c.title,c.status,c.created_at FROM booking_contracts c ORDER BY c.created_at DESC LIMIT 100"),
+  pool.query("SELECT c.id,c.booking_id,c.title,c.status,c.created_at,c.sent_at,c.signed_at,acc.signer_name,acc.accepted_at FROM booking_contracts c LEFT JOIN contract_acceptances acc ON acc.contract_id=c.id ORDER BY c.created_at DESC LIMIT 100"),
   pool.query("SELECT i.id,i.booking_id,i.invoice_number,i.currency,i.amount_cents,i.paid_cents,i.status,i.due_date FROM booking_invoices i ORDER BY i.created_at DESC LIMIT 100")
  ]);
  return json(res,200,{contracts:contracts.rows,invoices:invoices.rows,yocoReady:Boolean(process.env.YOCO_SECRET_KEY&&process.env.YOCO_WEBHOOK_SECRET&&process.env.YOCO_ENABLE_CHECKOUT==="true"),yocoMode:(process.env.YOCO_SECRET_KEY||"").startsWith("sk_test_")?"test":(process.env.YOCO_SECRET_KEY||"").startsWith("sk_live_")?"live":null,note:"Invoices are not evidence of received payments. Gateway credit requires validated, signed Yoco webhooks."});
@@ -693,6 +693,61 @@ async function readAccountNotification(req,res,id){
  return json(res,200,{notification:r.rows[0]});
 }
 
+
+async function sendContractForReview(req,res,id){
+ if(!superadminUser(req))return fail(res,403,"Superadmin required");
+ if(!validOrigin(req))return fail(res,403,"Origin not allowed");
+ if(!/^[a-f0-9-]{36}$/i.test(id))return fail(res,400,"Invalid contract ID");
+ let b;try{b=await body(req);}catch(e){return fail(res,400,e.message);}
+ if(b.confirm!==true)return fail(res,400,"Explicit send confirmation required");
+ const client=await pool.connect();
+ try{
+  await client.query("BEGIN");
+  const q=await client.query("SELECT c.id,c.status,c.booking_id,c.title,b.customer_account_id FROM booking_contracts c JOIN booking_enquiries b ON b.id=c.booking_id WHERE c.id=$1 FOR UPDATE OF c",[id]);
+  if(!q.rowCount){await client.query("ROLLBACK");return fail(res,404,"Contract not found");}
+  const c=q.rows[0];
+  if(c.status!=="draft"){await client.query("ROLLBACK");return fail(res,409,"Only draft contracts can be sent");}
+  if(!c.customer_account_id){await client.query("ROLLBACK");return fail(res,409,"Booking must belong to an authenticated customer; guest bookings need verified ownership first");}
+  await client.query("UPDATE booking_contracts SET status='sent',sent_at=now() WHERE id=$1",[id]);
+  await client.query("INSERT INTO hub_notifications(account_id,booking_id,channel,subject,body,state) VALUES($1,$2,'in_app','Contract ready for review',$3,'pending')",[c.customer_account_id,c.booking_id,"CABO has shared a draft contract for review: "+c.title+". No legal signature or booking confirmation has yet been recorded."]);
+  await client.query("COMMIT");
+  return json(res,200,{contractId:id,status:"sent",notice:"Contract made visible to its linked customer and an in-app notice was queued. No email was sent."});
+ }catch(e){await client.query("ROLLBACK");throw e;}finally{client.release();}
+}
+async function customerContracts(req,res){
+ const account=await accountSession(req);
+ if(!account)return fail(res,401,"Verified account required");
+ if(account.role!=="customer")return fail(res,403,"Customer role required");
+ const result=await pool.query("SELECT c.id,c.booking_id,c.title,c.terms,c.status,c.sent_at,c.signed_at,acc.signer_name,acc.accepted_at,a.synthetic AS artist_synthetic FROM booking_contracts c JOIN booking_enquiries b ON b.id=c.booking_id JOIN artists a ON a.id=b.artist_id LEFT JOIN contract_acceptances acc ON acc.contract_id=c.id WHERE b.customer_account_id=$1 AND c.status IN ('sent','accepted') ORDER BY c.created_at DESC LIMIT 60",[account.id]);
+ const contracts=result.rows.map(c=>({...c,termsHash:crypto.createHash("sha256").update(c.title+"\n"+c.terms,"utf8").digest("hex"),demoOnly:Boolean(c.artist_synthetic)}));
+ return json(res,200,{contracts,notice:"Review terms carefully. Acknowledgement is recorded in the app; no third-party signature identity verification is performed. All synthetic artist agreements are demonstrations."});
+}
+async function customerAcceptContract(req,res,id){
+ const account=await accountSession(req);
+ if(!account)return fail(res,401,"Verified account required");
+ if(account.role!=="customer")return fail(res,403,"Customer role required");
+ if(!validOrigin(req))return fail(res,403,"Origin not allowed");
+ if(!/^[a-f0-9-]{36}$/i.test(id))return fail(res,400,"Invalid contract ID");
+ let b;try{b=await body(req);}catch(e){return fail(res,400,e.message);}
+ const name=text(b.signerName,120),expectedHash=text(b.termsHash,80);
+ if(b.acceptTerms!==true||name.length<2||!/^[a-f0-9]{64}$/.test(expectedHash))return fail(res,400,"Read the terms, enter your name and explicitly acknowledge the displayed version");
+ const client=await pool.connect();
+ try{
+  await client.query("BEGIN");
+  const result=await client.query("SELECT c.id,c.status,c.title,c.terms,c.booking_id,b.customer_account_id,a.synthetic FROM booking_contracts c JOIN booking_enquiries b ON b.id=c.booking_id JOIN artists a ON a.id=b.artist_id WHERE c.id=$1 AND b.customer_account_id=$2 FOR UPDATE OF c",[id,account.id]);
+  if(!result.rowCount){await client.query("ROLLBACK");return fail(res,404,"Contract not found for this account");}
+  const c=result.rows[0];
+  if(c.status!=="sent"){await client.query("ROLLBACK");return fail(res,409,"Contract is not awaiting acceptance");}
+  const actual=crypto.createHash("sha256").update(c.title+"\n"+c.terms,"utf8").digest("hex");
+  if(!crypto.timingSafeEqual(Buffer.from(actual,"hex"),Buffer.from(expectedHash,"hex"))){await client.query("ROLLBACK");return fail(res,409,"Contract terms changed; please review the current version");}
+  await client.query("INSERT INTO contract_acceptances(contract_id,customer_account_id,signer_name,terms_sha256) VALUES($1,$2,$3,$4)",[id,account.id,name,actual]);
+  await client.query("UPDATE booking_contracts SET status='accepted',signed_at=now() WHERE id=$1",[id]);
+  await client.query("INSERT INTO hub_notifications(account_id,booking_id,channel,subject,body,state) VALUES($1,$2,'in_app','Contract acknowledgement recorded',$3,'pending')",[account.id,c.booking_id,"Your acceptance of "+c.title+" was recorded. Reference: "+id+". This does not mean payment was received."]);
+  await client.query("COMMIT");
+  return json(res,200,{contractId:id,status:"accepted",demoOnly:Boolean(c.synthetic),termsHash:actual,notice:c.synthetic?"Fictional artist contract acknowledged for demonstration; no real performance is booked.":"Electronic acceptance recorded in CABO. It is not a third-party verified digital signature."});
+ }catch(e){await client.query("ROLLBACK");if(e.code==="23505")return fail(res,409,"Contract was already acknowledged");throw e;}finally{client.release();}
+}
+
 const server=http.createServer(async(req,res)=>{
  try{
   const url=new URL(req.url||"/","http://localhost");
@@ -715,6 +770,8 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==="GET"&&url.pathname==="/api/accounts/artists")return myArtistAccess(req,res);
   if(req.method==="GET"&&url.pathname.startsWith("/api/accounts/artist-dashboard/"))return accountArtistDashboard(req,res,decodeURIComponent(url.pathname.slice("/api/accounts/artist-dashboard/".length)));
   if(req.method==="GET"&&url.pathname==="/api/accounts/bookings")return accountCustomerBookings(req,res);
+  if(req.method==="GET"&&url.pathname==="/api/accounts/contracts")return customerContracts(req,res);
+  if(req.method==="POST"&&/^\/api\/accounts\/contracts\/[a-f0-9-]{36}\/accept$/i.test(url.pathname))return customerAcceptContract(req,res,url.pathname.split("/")[4]);
   if(req.method==="GET"&&url.pathname==="/api/accounts/notifications")return accountNotifications(req,res);
   if(req.method==="POST"&&/^\/api\/accounts\/notifications\/[a-f0-9-]{36}\/read$/i.test(url.pathname))return readAccountNotification(req,res,url.pathname.split("/")[4]);
   if(req.method==="GET"&&url.pathname==="/api/ops/summary")return opsSummary(req,res);
@@ -729,6 +786,7 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==="POST"&&url.pathname==="/api/ops/memberships")return grantArtistMembership(req,res);
   if(req.method==="POST"&&url.pathname.startsWith("/api/ops/accounts/")&&url.pathname.endsWith("/approve"))return approveAccount(req,res,url.pathname.slice("/api/ops/accounts/".length,-"/approve".length));
   if(req.method==="GET"&&url.pathname==="/api/ops/finance")return financeWorkspace(req,res);
+  if(req.method==="POST"&&/^\/api\/ops\/contracts\/[a-f0-9-]{36}\/send$/i.test(url.pathname))return sendContractForReview(req,res,url.pathname.split("/")[4]);
   if(req.method==="POST"&&url.pathname==="/api/ops/contracts")return draftContract(req,res);
   if(req.method==="POST"&&url.pathname==="/api/ops/invoices")return draftInvoice(req,res);
   if(req.method==="POST"&&/^\/api\/ops\/invoices\/[a-f0-9-]{36}\/issue$/i.test(url.pathname))return issueInvoice(req,res,url.pathname.split("/")[4]);
