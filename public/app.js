@@ -217,6 +217,22 @@ async function loadPendingAccounts(){
 }
 
 
+
+async function loadNotifications(){
+ const root=$("notification-list");
+ try{
+  const d=await fetchJSON("/api/ops/notifications");
+  root.innerHTML='<h3>Queued notices ('+d.notifications.length+')</h3>'+ (d.notifications.map(n=>'<p>'+esc(n.subject)+' · '+esc(n.channel)+' · '+esc(n.state)+' · '+prettyDate(n.created_at)+'</p>').join("")||'<p>No notifications in queue.</p>');
+ }catch(e){root.textContent="Notifications unavailable: "+e.message;}
+}
+async function queueNotification(e){
+ e.preventDefault();const msg=$("notification-message");
+ try{
+  const r=await fetchJSON("/api/ops/notifications",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({bookingId:$("notification-booking").value,subject:$("notification-subject").value,message:$("notification-body").value})});
+  msg.textContent=r.notice;await loadNotifications();
+ }catch(err){msg.textContent=err.message;}
+}
+
 async function loadOperationalHistory(){
  const root=$("operations-health-history");
  try{
@@ -230,6 +246,7 @@ async function runOperationalCheck(){
   const r=await fetchJSON("/api/ops/check",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
   status.textContent="Recorded "+r.checks.length+" operational checks. Warnings indicate missing provider configuration or unverified recovery.";
   await loadOperationalHistory();
+  await loadNotifications();
  }catch(err){status.textContent="Health check failed: "+err.message;}
 }
 
@@ -417,6 +434,7 @@ document.addEventListener("DOMContentLoaded",async()=>{
  $("real-account-form").addEventListener("submit",registerRealAccount);
  $("operations-refresh").addEventListener("click",loadOperations);
  $("operations-run-check").addEventListener("click",runOperationalCheck);
+ $("notification-form").addEventListener("submit",queueNotification);
  $("membership-form").addEventListener("submit",grantMembership);
  $("contract-draft-form").addEventListener("submit",submitDraftContract);
  $("invoice-draft-form").addEventListener("submit",submitDraftInvoice);
