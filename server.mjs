@@ -436,6 +436,23 @@ async function operationalHistory(req,res){
  return json(res,200,{history:r.rows});
 }
 
+
+async function opsNotifications(req,res){
+ if(!superadminUser(req))return fail(res,403,"Superadmin required");
+ const r=await pool.query("SELECT n.id,n.channel,n.subject,n.state,n.created_at,n.delivered_at,n.booking_id FROM hub_notifications n ORDER BY n.created_at DESC LIMIT 100");
+ return json(res,200,{notifications:r.rows,deliveryProviderConfigured:false});
+}
+async function queueBookingNotification(req,res){
+ if(!superadminUser(req))return fail(res,403,"Superadmin required");
+ if(!validOrigin(req))return fail(res,403,"Origin not allowed");
+ let b;try{b=await body(req);}catch(e){return fail(res,400,e.message);}
+ const id=text(b.bookingId,60),subject=text(b.subject,160),message=text(b.message,1600);
+ if(!/^[0-9a-f-]{36}$/i.test(id)||subject.length<4||message.length<10)return fail(res,400,"Valid booking, subject and message required");
+ const result=await pool.query("INSERT INTO hub_notifications(booking_id,channel,subject,body,state) SELECT id,'in_app',$2,$3,'pending' FROM booking_enquiries WHERE id=$1 RETURNING id,state,created_at",[id,subject,message]);
+ if(!result.rowCount)return fail(res,404,"Booking not found");
+ return json(res,201,{notification:result.rows[0],notice:"Internal notification queued; no email or SMS has been sent."});
+}
+
 const server=http.createServer(async(req,res)=>{
  try{
   const url=new URL(req.url||"/","http://localhost");
@@ -459,6 +476,8 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==="GET"&&url.pathname==="/api/ops/summary")return opsSummary(req,res);
   if(req.method==="POST"&&url.pathname==="/api/ops/check")return recordOperationalCheck(req,res);
   if(req.method==="GET"&&url.pathname==="/api/ops/history")return operationalHistory(req,res);
+  if(req.method==="GET"&&url.pathname==="/api/ops/notifications")return opsNotifications(req,res);
+  if(req.method==="POST"&&url.pathname==="/api/ops/notifications")return queueBookingNotification(req,res);
   if(req.method==="GET"&&url.pathname==="/api/ops/accounts")return pendingAccounts(req,res);
   if(req.method==="POST"&&url.pathname==="/api/ops/memberships")return grantArtistMembership(req,res);
   if(req.method==="POST"&&url.pathname.startsWith("/api/ops/accounts/")&&url.pathname.endsWith("/approve"))return approveAccount(req,res,url.pathname.slice("/api/ops/accounts/".length,-"/approve".length));
