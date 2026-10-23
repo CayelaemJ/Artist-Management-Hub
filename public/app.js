@@ -47,6 +47,10 @@ function openBooking(slug){
  const a=artists.find(a=>a.slug===slug);
  if(!a)return;
  $("booking-form").reset();
+ if(realAccount?.role==="customer"){
+  $("booking-form").elements.namedItem("name").value=realAccount.name;
+  $("booking-form").elements.namedItem("email").value=realAccount.email;
+ }
  $("booking-slug").value=slug;
  $("booking-artist-name").textContent=a.stage_name+" · "+a.genre;
  $("booking-status").textContent=publicPreviewOnly?"Booking requests are temporarily unavailable while the live database connection is being configured. Please do not enter private details.":"";
