@@ -462,11 +462,13 @@ function setDemoUI(account){
  $("signout-button").hidden=!active;
  $("my-account").textContent=realAccount?"My verified "+realAccount.role+" account":account?"My "+account.role+" studio":"My studio";
 }
+let demoAuthEpoch=0;
 async function restoreDemoSession(){
+ const epoch=demoAuthEpoch;
  try{
   const d=await fetchJSON("/api/demo-auth/me");
-  setDemoUI(d.account);
- }catch{setDemoUI(null);}
+  if(epoch===demoAuthEpoch)setDemoUI(d.account);
+ }catch{if(epoch===demoAuthEpoch)setDemoUI(null);}
 }
 
 async function loadDemoBookings(){
@@ -633,6 +635,7 @@ async function realLogin(e){
   $("real-login-password").value="";
   realAccount=d.account;
   await fetchJSON("/api/demo-auth/logout",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"}).catch(()=>{});
+  demoAuthEpoch++;
   setDemoUI(null);
   $("real-login-dialog").close();
   showStudio("demo");
@@ -679,6 +682,7 @@ async function submitDemoSignIn(e){
    body:JSON.stringify({email:$("signin-email").value,password:$("signin-password").value})
   });
   $("signin-password").value="";
+  demoAuthEpoch++;
   setDemoUI(d.account);
   $("signin-dialog").close();
   showStudio("demo");
@@ -688,6 +692,7 @@ async function submitDemoSignIn(e){
 async function signOutDemo(){
  if(realAccount&&!demoAccount)return realLogout();
  try{await fetchJSON("/api/demo-auth/logout",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});}catch(e){console.warn("Could not confirm demo sign out; retry before using a shared device.");return;}
+ demoAuthEpoch++;
  setDemoUI(null);
  showPublic();
 }
@@ -751,7 +756,7 @@ document.addEventListener("DOMContentLoaded",async()=>{
   const d=await fetchJSON("/api/artists");artists=d.artists;
   renderRoster();
   for(const id of ["studio-artist","ai-artist"])$(id).innerHTML=artists.map(a=>'<option value="'+esc(a.slug)+'">'+esc(a.stage_name)+'</option>').join("");
-  if(location.pathname==="/studio")showStudio();
+  if(location.pathname==="/studio"){if($("studio-view").hidden)showStudio();else if(!$("overview-panel").hidden)loadOverview();}
  }catch(err){
   publicPreviewOnly=true;
   artists=staticDemoArtists;
@@ -759,6 +764,6 @@ document.addEventListener("DOMContentLoaded",async()=>{
   for(const id of ["studio-artist","ai-artist"])$(id).innerHTML=artists.map(a=>'<option value="'+esc(a.slug)+'">'+esc(a.stage_name)+'</option>').join("");
   $("artist-load-error").hidden=false;
   $("artist-load-error").textContent="Public preview mode: live database features and bookings are temporarily unavailable. This roster is fictional.";
-  if(location.pathname==="/studio")showStudio();
+  if(location.pathname==="/studio"){if($("studio-view").hidden)showStudio();else if(!$("overview-panel").hidden)loadOverview();}
  }
 });
