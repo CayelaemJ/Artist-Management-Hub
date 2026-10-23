@@ -276,9 +276,33 @@ async function loadNotifications(){
  const root=$("notification-list");
  try{
   const d=await fetchJSON("/api/ops/notifications");
-  root.innerHTML='<h3>Queued notices ('+d.notifications.length+')</h3>'+ (d.notifications.map(n=>'<p>'+esc(n.subject)+' · '+esc(n.channel)+' · '+esc(n.state)+' · '+prettyDate(n.created_at)+'</p>').join("")||'<p>No notifications in queue.</p>');
+  root.innerHTML='<h3>Queued notices ('+d.notifications.length+')</h3>'+ (d.notifications.map(n=>'<article class="enquiry-item"><p>'+esc(n.subject)+' · '+esc(n.channel)+' · '+esc(n.state)+'</p><small>'+prettyDate(n.created_at)+(n.channel==='email'?' · Attempts: '+esc(n.attempts||0)+(n.state==='sent'?' · Provider accepted (not confirmed delivered)':n.next_attempt_at?' · Next attempt: '+esc(n.next_attempt_at):''):'')+'</small></article>').join("")||'<p>No notifications in queue.</p>');
+  $("notification-email-provider-status").textContent=d.deliveryProviderConfigured?"Email provider configured. Dispatch reports acceptance, not inbox receipt.":"Email delivery disabled — configure RESEND_API_KEY and verified sender in Render.";
  }catch(e){root.textContent="Notifications unavailable: "+e.message;}
 }
+
+async function queueVerifiedEmail(e){
+ e.preventDefault();
+ const msg=$("notification-email-message"),btn=e.currentTarget.querySelector('button[type="submit"]');
+ btn.disabled=true;msg.textContent="Queuing email for verified booking owner…";
+ try{
+  const d=await fetchJSON("/api/ops/notifications/email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({bookingId:$("notification-email-booking").value,subject:$("notification-email-subject").value,message:$("notification-email-body").value})});
+  msg.textContent=d.notice;
+  await loadNotifications();
+ }catch(err){msg.textContent="Email was not queued: "+err.message;}
+ finally{btn.disabled=false;}
+}
+async function dispatchVerifiedEmails(){
+ const btn=$("notifications-dispatch"),msg=$("notification-email-message");
+ btn.disabled=true;msg.textContent="Attempting due email queue entries…";
+ try{
+  const d=await fetchJSON("/api/ops/notifications/dispatch",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
+  msg.textContent=d.attempted+" email(s) attempted. "+d.outcomes.filter(x=>x.status==="provider_accepted").length+" accepted by email provider. Acceptance is not confirmed delivery.";
+  await loadNotifications();
+ }catch(err){msg.textContent="Dispatch unavailable: "+err.message;}
+ finally{btn.disabled=false;}
+}
+
 async function queueNotification(e){
  e.preventDefault();const msg=$("notification-message");
  try{
@@ -691,6 +715,8 @@ document.addEventListener("DOMContentLoaded",async()=>{
  $("operations-refresh").addEventListener("click",loadOperations);
  $("operations-run-check").addEventListener("click",runOperationalCheck);
  $("notification-form").addEventListener("submit",queueNotification);
+ $("notification-email-form").addEventListener("submit",queueVerifiedEmail);
+ $("notifications-dispatch").addEventListener("click",dispatchVerifiedEmails);
  $("youtube-connection-form").addEventListener("submit",connectYouTube);
  $("membership-form").addEventListener("submit",grantMembership);
  $("contract-draft-form").addEventListener("submit",submitDraftContract);

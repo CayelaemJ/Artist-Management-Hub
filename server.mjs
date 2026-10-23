@@ -4,6 +4,7 @@ import path from "node:path";
 import {fileURLToPath} from "node:url";
 import crypto from "node:crypto";
 import pg from "pg";
+import {retryDelaySeconds,sendResendEmail} from "./lib/email-outbox.mjs";
 import {verifyYocoWebhook} from "./lib/yoco-webhooks.mjs";
 import {localCareerGuidance} from "./lib/advice.mjs";
 import {hashPassword,verifyPassword,tokenHash,issueToken,accountCookie,clearAccountCookie,extractAccountCookie} from "./lib/account-auth.mjs";
@@ -517,9 +518,55 @@ async function operationalHistory(req,res){
 
 async function opsNotifications(req,res){
  if(!superadminUser(req))return fail(res,403,"Superadmin required");
- const r=await pool.query("SELECT n.id,n.channel,n.subject,n.state,n.created_at,n.delivered_at,n.booking_id FROM hub_notifications n ORDER BY n.created_at DESC LIMIT 100");
- return json(res,200,{notifications:r.rows,deliveryProviderConfigured:false});
+ const r=await pool.query("SELECT n.id,n.channel,n.subject,n.state,n.attempts,n.next_attempt_at,n.last_error,n.provider_message_id,n.created_at,n.delivered_at,n.booking_id FROM hub_notifications n ORDER BY n.created_at DESC LIMIT 100");
+ return json(res,200,{notifications:r.rows,deliveryProviderConfigured:Boolean(process.env.RESEND_API_KEY&&process.env.VERIFICATION_FROM_EMAIL),notice:"Provider acceptance does not prove delivery to an inbox."});
 }
+
+async function queueCustomerEmail(req,res){
+ if(!superadminUser(req))return fail(res,403,"Superadmin required");
+ if(!validOrigin(req))return fail(res,403,"Origin not allowed");
+ if(!rateLimit(req,"queue-email",20,3600000))return fail(res,429,"Email queue limit reached");
+ let b;try{b=await body(req);}catch(e){return fail(res,400,e.message);}
+ const id=text(b.bookingId,60),subject=text(b.subject,160),message=text(b.message,1600);
+ if(!/^[0-9a-f-]{36}$/i.test(id)||subject.length<4||message.length<10)return fail(res,400,"Valid booking, subject and message required");
+ const dedupeKey=crypto.createHash("sha256").update("cabo-email-v1:"+id+"\n"+subject+"\n"+message).digest("hex");
+ const result=await pool.query(
+  "INSERT INTO hub_notifications(account_id,booking_id,channel,subject,body,state,dedupe_key) SELECT a.id,b.id,'email',$2,$3,'pending',$4 FROM booking_enquiries b JOIN hub_accounts a ON a.id=b.customer_account_id WHERE b.id=$1 AND a.role='customer' AND a.disabled_at IS NULL AND a.email_verified_at IS NOT NULL ON CONFLICT(dedupe_key) DO UPDATE SET dedupe_key=EXCLUDED.dedupe_key RETURNING id,state,created_at",
+  [id,subject,message,dedupeKey]
+ );
+ if(!result.rowCount)return fail(res,404,"Booking must belong to a verified, active customer before email can be queued");
+ return json(res,201,{notification:result.rows[0],providerConfigured:Boolean(process.env.RESEND_API_KEY&&process.env.VERIFICATION_FROM_EMAIL),notice:"Email queued for its verified booking owner. It has NOT been sent or delivered."});
+}
+async function dispatchQueuedCustomerEmails(req,res){
+ if(!superadminUser(req))return fail(res,403,"Superadmin required");
+ if(!validOrigin(req))return fail(res,403,"Origin not allowed");
+ if(!rateLimit(req,"dispatch-email",6,600000))return fail(res,429,"Dispatch retry limit reached");
+ if(!process.env.RESEND_API_KEY||!process.env.VERIFICATION_FROM_EMAIL)return fail(res,503,"Email provider is not configured. Queued messages remain pending.");
+ const claimed=await pool.query(
+  "WITH due AS (SELECT n.id FROM hub_notifications n JOIN hub_accounts a ON a.id=n.account_id WHERE n.channel='email' AND n.state='pending' AND n.next_attempt_at<=now() AND (n.locked_until IS NULL OR n.locked_until<now()) AND a.disabled_at IS NULL AND a.email_verified_at IS NOT NULL ORDER BY n.created_at LIMIT 3 FOR UPDATE OF n SKIP LOCKED) UPDATE hub_notifications n SET locked_until=now()+interval '2 minutes',attempts=n.attempts+1 FROM due WHERE n.id=due.id RETURNING n.id,n.account_id,n.subject,n.body,n.attempts"
+ );
+ const outcomes=[];
+ for(const job of claimed.rows){
+  try{
+   const owner=await pool.query("SELECT email FROM hub_accounts WHERE id=$1 AND email_verified_at IS NOT NULL AND disabled_at IS NULL",[job.account_id]);
+   if(!owner.rowCount)throw Error("Verified account no longer available");
+   const messageId=await sendResendEmail({
+    apiKey:process.env.RESEND_API_KEY,from:process.env.VERIFICATION_FROM_EMAIL,
+    to:owner.rows[0].email,subject:job.subject,body:job.body,idempotencyKey:job.id
+   });
+   await pool.query("UPDATE hub_notifications SET state='sent',delivered_at=now(),provider_message_id=$2,locked_until=NULL,last_error=NULL WHERE id=$1",[job.id,messageId]);
+   outcomes.push({id:job.id,status:"provider_accepted"});
+  }catch(e){
+   const attempts=Number(job.attempts),delay=retryDelaySeconds(attempts);
+   const status=attempts>=5?"failed":"pending";
+   await pool.query("UPDATE hub_notifications SET state=$2,last_error=$3,next_attempt_at=now()+($4::int*interval '1 second'),locked_until=NULL WHERE id=$1",
+    [job.id,status,String(e.message||"Delivery service unavailable").slice(0,150),delay]);
+   outcomes.push({id:job.id,status:status==="failed"?"failed":"retry_scheduled"});
+  }
+ }
+ return json(res,200,{attempted:outcomes.length,outcomes,notice:"Provider-accepted means the email service accepted the request, NOT that the customer opened or received it."});
+}
+
 async function queueBookingNotification(req,res){
  if(!superadminUser(req))return fail(res,403,"Superadmin required");
  if(!validOrigin(req))return fail(res,403,"Origin not allowed");
@@ -854,6 +901,8 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==="POST"&&url.pathname==="/api/ops/social/youtube/connect")return youtubeConnect(req,res);
   if(req.method==="POST"&&/^\/api\/ops\/social\/youtube\/[a-f0-9-]{36}\/sync$/i.test(url.pathname))return youtubeSync(req,res,url.pathname.split("/")[5]);
   if(req.method==="POST"&&url.pathname==="/api/ops/notifications")return queueBookingNotification(req,res);
+  if(req.method==="POST"&&url.pathname==="/api/ops/notifications/email")return queueCustomerEmail(req,res);
+  if(req.method==="POST"&&url.pathname==="/api/ops/notifications/dispatch")return dispatchQueuedCustomerEmails(req,res);
   if(req.method==="GET"&&url.pathname==="/api/ops/accounts")return pendingAccounts(req,res);
   if(req.method==="POST"&&url.pathname==="/api/ops/memberships")return grantArtistMembership(req,res);
   if(req.method==="POST"&&url.pathname.startsWith("/api/ops/accounts/")&&url.pathname.endsWith("/approve"))return approveAccount(req,res,url.pathname.slice("/api/ops/accounts/".length,-"/approve".length));
