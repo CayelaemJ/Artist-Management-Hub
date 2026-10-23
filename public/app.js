@@ -182,7 +182,6 @@ async function refreshFinanceLedger(){
     const d=await fetchJSON("/api/ops/contracts/"+encodeURIComponent(button.dataset.contractSend)+"/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({confirm:true})});
     $("finance-draft-message").textContent=d.notice;
     await refreshFinanceLedger();
-  await loadManagementAnalytics();
    }catch(e){$("finance-draft-message").textContent=e.message;button.disabled=false;}
   }));
   $("yoco-payment-status").textContent=d.yocoReady?"Yoco "+d.yocoMode+" checkout configured; payments only apply after signed webhooks.":"Yoco checkout disabled until merchant credentials and webhook signing secret are configured.";
@@ -398,8 +397,9 @@ async function loadOperations(){
   const rows=[["Registered accounts",d.summary.accounts],["Booking enquiries",d.summary.enquiries],["Contracts",d.summary.contracts],["Invoices",d.summary.invoices],["Social connections",d.summary.social_connections],["Pending notifications",d.summary.pending_notifications]];
   $("operations-content").innerHTML=rows.map(x=>kpi(x[0].toUpperCase(),String(x[1]),"LIVE NEON RECORDS")).join("");
   status.textContent="Provider status: payments not configured; social integrations require consent and API credentials; backup restore testing remains unverified.";
-  await refreshFinanceLedger();
-  await loadPendingAccounts();
+  await Promise.all([refreshFinanceLedger(),loadManagementAnalytics(),loadPendingAccounts()]);
+  // Finance and analytics are independent and both remain protected by superadmin sessions.
+
   await loadOperationalHistory();
  }catch(e){status.textContent="Superadmin access required: "+e.message;$("operations-content").innerHTML="";}
 }
