@@ -99,8 +99,11 @@ async function createBooking(req,res){
  if(!slug||name.length<2||!email||!venue||!type||!validDate(eventDate)||eventDate<new Date().toISOString().slice(0,10))return fail(res,400,"Check the required booking details and event date");
  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||!validTime(start)||!validTime(end)||(start&&end&&start>=end))return fail(res,400,"Email or time range is invalid");
  if(budget!==null&&(!Number.isFinite(budget)||budget<0||budget>100000000))return fail(res,400,"Invalid budget");
- const r=await pool.query("INSERT INTO booking_enquiries (artist_id,contact_name,contact_email,event_type,event_date,start_time,end_time,venue,budget_zar,message) SELECT id,$2,$3,$4,$5,$6,$7,$8,$9,$10 FROM artists WHERE slug=$1 AND synthetic=TRUE RETURNING id,status,created_at",
- [slug,name,email,type,eventDate,start||null,end||null,venue,budget,message]);
+ const account=await accountSession(req);
+ const customerId=account?.role==="customer"?account.id:null;
+ if(customerId&&email.toLowerCase()!==account.email)return fail(res,400,"Use your verified customer account email for a linked booking");
+ const r=await pool.query("INSERT INTO booking_enquiries (artist_id,contact_name,contact_email,event_type,event_date,start_time,end_time,venue,budget_zar,message,customer_account_id) SELECT id,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11 FROM artists WHERE slug=$1 AND synthetic=TRUE RETURNING id,status,created_at",
+ [slug,name,email,type,eventDate,start||null,end||null,venue,budget,message,customerId]);
  if(!r.rowCount)return fail(res,404,"Artist not found");
  json(res,201,{reference:r.rows[0].id,status:r.rows[0].status,message:"Enquiry received. This is not a confirmed booking. No automated notification is currently sent."});
 }
@@ -403,8 +406,8 @@ async function accountCustomerBookings(req,res){
  const a=await accountSession(req);
  if(!a)return fail(res,401,"Account sign-in required");
  if(a.role!=="customer")return fail(res,403,"Customer account required");
- // Historical enquiries are not exposed by email alone: require an ownership proof workflow.
- return json(res,200,{bookings:[],verificationRequired:true,message:"Booking ownership must be verified before historical enquiries can be linked to your account."});
+ const result=await pool.query("SELECT b.id,b.event_type,b.event_date,b.venue,b.status,b.created_at,artist.stage_name FROM booking_enquiries b JOIN artists artist ON artist.id=b.artist_id WHERE b.customer_account_id=$1 ORDER BY b.created_at DESC LIMIT 100",[a.id]);
+ return json(res,200,{bookings:result.rows,notice:"Only enquiries submitted while authenticated with this account are shown. Older guest enquiries require separate ownership verification."});
 }
 
 
