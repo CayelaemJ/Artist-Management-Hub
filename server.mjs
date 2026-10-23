@@ -453,6 +453,16 @@ async function queueBookingNotification(req,res){
  return json(res,201,{notification:result.rows[0],notice:"Internal notification queued; no email or SMS has been sent."});
 }
 
+
+async function socialReadiness(req,res){
+ if(!superadminUser(req))return fail(res,403,"Superadmin required");
+ const [connections,metrics]=await Promise.all([
+  pool.query("SELECT sc.id,sc.platform,sc.provider_account_ref,sc.granted_scopes,sc.last_synced_at,a.stage_name FROM social_provider_connections sc JOIN artists a ON a.id=sc.artist_id ORDER BY sc.connected_at DESC LIMIT 50"),
+  pool.query("SELECT platform,COUNT(*)::int AS linked_accounts FROM social_provider_connections GROUP BY platform ORDER BY platform")
+ ]);
+ return json(res,200,{connections:connections.rows,platforms:metrics.rows,liveDataAvailable:connections.rowCount>0,notice:"Only approved, consented official API connections count as live. Synthetic sentiment inputs are not live analytics."});
+}
+
 const server=http.createServer(async(req,res)=>{
  try{
   const url=new URL(req.url||"/","http://localhost");
@@ -477,6 +487,7 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==="POST"&&url.pathname==="/api/ops/check")return recordOperationalCheck(req,res);
   if(req.method==="GET"&&url.pathname==="/api/ops/history")return operationalHistory(req,res);
   if(req.method==="GET"&&url.pathname==="/api/ops/notifications")return opsNotifications(req,res);
+  if(req.method==="GET"&&url.pathname==="/api/ops/social")return socialReadiness(req,res);
   if(req.method==="POST"&&url.pathname==="/api/ops/notifications")return queueBookingNotification(req,res);
   if(req.method==="GET"&&url.pathname==="/api/ops/accounts")return pendingAccounts(req,res);
   if(req.method==="POST"&&url.pathname==="/api/ops/memberships")return grantArtistMembership(req,res);
