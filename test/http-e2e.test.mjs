@@ -39,7 +39,7 @@ test("HTTP end-to-end: health, PR dashboard, demo sign-in and cross-role authori
   const login=await fetch(base+"/api/demo-auth/login",{method:"POST",headers:{"Content-Type":"application/json","Origin":base},body:JSON.stringify({email:"manager.demo@cabo.test",password:"12345"})});
   assert.equal(login.status,200);
   const cookie=login.headers.get("set-cookie")?.split(";")[0];
-  assert.match(cookie||"",/cabo_demo=/);
+  assert.match(cookie||"",/cabo_demo_session=/);
   const workspace=await fetch(base+"/api/demo-auth/workspace",{headers:{Cookie:cookie}});
   assert.equal(workspace.status,200);assert.equal((await workspace.json()).role,"manager");
   assert.equal((await fetch(base+"/api/demo-bookings",{headers:{Cookie:cookie}})).status,200);
@@ -47,6 +47,6 @@ test("HTTP end-to-end: health, PR dashboard, demo sign-in and cross-role authori
   assert.equal(invalid.status,400,"Weak production passwords must fail");
  }finally{
   child.kill("SIGTERM");
-  await new Promise(resolve=>child.once("exit",resolve));
+  if(child.exitCode===null)await new Promise(resolve=>{child.once("exit",resolve);setTimeout(resolve,2000);});
  }
 });
