@@ -325,6 +325,37 @@ async function opsSummary(req,res){
  return json(res,200,{summary:counts.rows[0],payments:"provider_not_configured",social:"provider_consent_required",backup:"restore_drill_not_verified"});
 }
 
+
+async function financeWorkspace(req,res){
+ if(!superadminUser(req))return fail(res,403,"Superadmin required");
+ const [contracts,invoices]=await Promise.all([
+  pool.query("SELECT c.id,c.booking_id,c.title,c.status,c.created_at FROM booking_contracts c ORDER BY c.created_at DESC LIMIT 100"),
+  pool.query("SELECT i.id,i.booking_id,i.invoice_number,i.currency,i.amount_cents,i.paid_cents,i.status,i.due_date FROM booking_invoices i ORDER BY i.created_at DESC LIMIT 100")
+ ]);
+ return json(res,200,{contracts:contracts.rows,invoices:invoices.rows,note:"Invoices are not evidence of received payments; provider reconciliation is not configured."});
+}
+async function draftContract(req,res){
+ if(!superadminUser(req))return fail(res,403,"Superadmin required");
+ if(!validOrigin(req))return fail(res,403,"Origin not allowed");
+ let b;try{b=await body(req);}catch(e){return fail(res,400,e.message);}
+ const booking=text(b.bookingId,60),title=text(b.title,150),terms=text(b.terms,8000);
+ if(!/^[0-9a-f-]{36}$/i.test(booking)||title.length<4||terms.length<20)return fail(res,400,"Valid booking reference, contract title and terms required");
+ const r=await pool.query("INSERT INTO booking_contracts(booking_id,title,terms) SELECT id,$2,$3 FROM booking_enquiries WHERE id=$1 RETURNING id,status,created_at",[booking,title,terms]);
+ if(!r.rowCount)return fail(res,404,"Booking not found");
+ return json(res,201,{contract:r.rows[0],notice:"Draft contract created; no signature or acceptance has occurred."});
+}
+async function draftInvoice(req,res){
+ if(!superadminUser(req))return fail(res,403,"Superadmin required");
+ if(!validOrigin(req))return fail(res,403,"Origin not allowed");
+ let b;try{b=await body(req);}catch(e){return fail(res,400,e.message);}
+ const booking=text(b.bookingId,60),amount=Number(b.amountZar);
+ if(!/^[0-9a-f-]{36}$/i.test(booking)||!Number.isFinite(amount)||amount<=0||amount>100000000||Math.round(amount*100)/100!==amount)return fail(res,400,"Valid booking and positive ZAR amount required");
+ const invoiceNumber="CABO-"+crypto.randomBytes(6).toString("hex").toUpperCase();
+ const r=await pool.query("INSERT INTO booking_invoices(booking_id,invoice_number,amount_cents) SELECT id,$2,$3 FROM booking_enquiries WHERE id=$1 RETURNING id,invoice_number,status,amount_cents",[booking,invoiceNumber,Math.round(amount*100)]);
+ if(!r.rowCount)return fail(res,404,"Booking not found");
+ return json(res,201,{invoice:r.rows[0],notice:"Draft invoice only. No payment was charged or collected."});
+}
+
 const server=http.createServer(async(req,res)=>{
  try{
   const url=new URL(req.url||"/","http://localhost");
@@ -344,6 +375,9 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==="POST"&&url.pathname==="/api/accounts/logout")return accountLogout(req,res);
   if(req.method==="GET"&&url.pathname==="/api/accounts/artists")return myArtistAccess(req,res);
   if(req.method==="GET"&&url.pathname==="/api/ops/summary")return opsSummary(req,res);
+  if(req.method==="GET"&&url.pathname==="/api/ops/finance")return financeWorkspace(req,res);
+  if(req.method==="POST"&&url.pathname==="/api/ops/contracts")return draftContract(req,res);
+  if(req.method==="POST"&&url.pathname==="/api/ops/invoices")return draftInvoice(req,res);
 
   if(req.method==="GET"&&url.pathname==="/api/superadmin/me")return adminSession(req,res);
   if(req.method==="POST"&&url.pathname==="/api/superadmin/logout")return adminLogout(req,res);
