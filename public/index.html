@@ -100,7 +100,7 @@
       <div id="overview-error" class="error-block" hidden></div>
       <div id="overview-content"><p class="loading">Loading career intelligence…</p></div>
     </div>
-    <div id="enquiries-panel" class="studio-panel" hidden>
+    <div id="enquiries-panel" class="studio-panel" hidden><div class="dash-card" id="superadmin-auth-card"><h3>Superadmin sign-in</h3><p>Sign in with the administrator account to manage real enquiries and use configured AI services. Demo roles remain isolated.</p><form id="superadmin-login-form" class="token-form"><label for="superadmin-username">Username</label><div><input id="superadmin-username" autocomplete="username" required value="cabo_test" maxlength="80" aria-label="Superadmin username"></div><label for="superadmin-password">Password</label><div><input id="superadmin-password" type="password" autocomplete="current-password" required aria-label="Superadmin password"><button class="primary-button" type="submit">Sign in securely</button></div></form><p id="superadmin-session-status" class="message" role="status"></p><button id="superadmin-logout" class="outline-button" type="button" hidden>Sign out of superadmin</button></div>
       <div class="panel-intro"><h2>Booking requests</h2><p>Restricted management access. Enquiries are never auto-confirmed. This prototype uses a single management token; granular team permissions are not implemented.</p></div>
       <form id="admin-form" class="token-form"><label for="admin-token">Management access token</label><div><input id="admin-token" type="password" placeholder="Token configured in Render" autocomplete="off" required><button class="primary-button" type="submit">Access enquiries</button></div></form>
       <div id="admin-message" class="message" role="status"></div>
