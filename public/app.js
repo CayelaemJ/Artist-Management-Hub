@@ -71,8 +71,9 @@ function resetBookingFields(){
 function showStudio(panel="overview"){
  $("public-view").hidden=true;$("studio-view").hidden=false;
  document.querySelectorAll(".studio-tab").forEach(tab=>tab.classList.toggle("active",tab.dataset.panel===panel));
- for(const id of ["demo","overview","enquiries","ai"])$(id+"-panel").hidden=id!==panel;
+ for(const id of ["demo","overview","enquiries","ai","operations"])$(id+"-panel").hidden=id!==panel;
  if(panel==="enquiries"&&superadminActive)loadEnquiries();
+ if(panel==="operations")loadOperations();
  if(location.pathname!=="/studio")history.pushState({view:"studio"},"","/studio");
  window.scrollTo(0,0);
  if(panel==="overview")loadOverview();
@@ -161,6 +162,25 @@ async function loadOverview(){
 }
 
 let superadminActive=false;
+
+async function loadOperations(){
+ const status=$("operations-message");status.textContent="Fetching operational counts from Neon…";
+ try{
+  const d=await fetchJSON("/api/ops/summary");
+  const rows=[["Registered accounts",d.summary.accounts],["Booking enquiries",d.summary.enquiries],["Contracts",d.summary.contracts],["Invoices",d.summary.invoices],["Social connections",d.summary.social_connections],["Pending notifications",d.summary.pending_notifications]];
+  $("operations-content").innerHTML=rows.map(x=>kpi(x[0].toUpperCase(),String(x[1]),"LIVE NEON RECORDS")).join("");
+  status.textContent="Provider status: payments not configured; social integrations require consent and API credentials; backup restore testing remains unverified.";
+ }catch(e){status.textContent="Superadmin access required: "+e.message;$("operations-content").innerHTML="";}
+}
+async function registerRealAccount(e){
+ e.preventDefault();const status=$("real-account-message"),button=e.currentTarget.querySelector('button[type="submit"]');
+ button.disabled=true;status.textContent="Creating account…";
+ try{
+  const d=await fetchJSON("/api/accounts/register",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:$("real-name").value,email:$("real-email").value,role:$("real-role").value,password:$("real-password").value})});
+  $("real-password").value="";status.textContent=d.message;
+ }catch(err){status.textContent=err.message;}finally{button.disabled=false;}
+}
+
 async function checkSuperadmin(){
  try {await fetchJSON("/api/superadmin/me");superadminActive=true;}catch{superadminActive=false;}
  $("superadmin-login-form").hidden=superadminActive;
@@ -319,6 +339,10 @@ document.addEventListener("DOMContentLoaded",async()=>{
  $("signout-button").addEventListener("click",signOutDemo);
  $("close-signin").addEventListener("click",()=>$("signin-dialog").close());
  $("signin-form").addEventListener("submit",submitDemoSignIn);
+ $("open-real-account").addEventListener("click",()=>{$("signin-dialog").close();$("real-account-message").textContent="";$("real-account-dialog").showModal();});
+ $("close-real-account").addEventListener("click",()=>$("real-account-dialog").close());
+ $("real-account-form").addEventListener("submit",registerRealAccount);
+ $("operations-refresh").addEventListener("click",loadOperations);
  $("demo-booking-form").addEventListener("submit",sendDemoBooking);
  $("toggle-password").addEventListener("click",()=>{const input=$("signin-password");const visible=input.type==="password";input.type=visible?"text":"password";$("toggle-password").textContent=visible?"Hide":"Show";});
  document.querySelectorAll("[data-demo-email]").forEach(b=>b.addEventListener("click",()=>{
