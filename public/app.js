@@ -283,11 +283,29 @@ async function runOperationalCheck(){
 }
 
 
+
+async function connectYouTube(e){
+ e.preventDefault();
+ const status=$("youtube-status"),btn=e.currentTarget.querySelector('button[type="submit"]');
+ btn.disabled=true;status.textContent="Registering consented YouTube channel…";
+ try{
+  const r=await fetchJSON("/api/ops/social/youtube/connect",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({artistSlug:$("youtube-artist").value,channelId:$("youtube-channel-id").value.trim(),consentConfirmed:$("youtube-consent").checked})});
+  status.textContent=r.notice;await loadSocialCoverage();
+ }catch(err){status.textContent=err.message;}
+ finally{btn.disabled=false;}
+}
+
 async function loadSocialCoverage(){
  const root=$("social-provider-coverage");
  try{
   const d=await fetchJSON("/api/ops/social");
-  root.innerHTML=d.connections.length?d.connections.map(c=>'<p>'+esc(c.stage_name)+' · '+esc(c.platform)+' · last synchronized: '+(c.last_synced_at?prettyDate(c.last_synced_at):'Not yet')+'</p>').join(""):'<p>No approved official social integrations connected yet. Demo social signals are illustrative only.</p>';
+  root.innerHTML=d.connections.length?d.connections.map(c=>'<article class="enquiry-item"><strong>'+esc(c.stage_name)+'</strong> · '+esc(c.platform)+'<p>Last official sync: '+(c.last_synced_at?prettyDate(c.last_synced_at):'Not yet')+' · followers: '+(c.latest_followers==null?'Not available':esc(c.latest_followers))+'</p>'+(c.platform==="youtube"?'<button class="outline-button" type="button" data-youtube-sync="'+esc(c.id)+'">Sync official YouTube data ↗</button>':'')+'</article>').join(""):'<p>No approved official social integrations connected yet. Demo social signals are illustrative only.</p>';
+  $("youtube-artist").innerHTML=artists.map(a=>'<option value="'+esc(a.slug)+'">'+esc(a.stage_name)+'</option>').join("");
+  root.querySelectorAll("[data-youtube-sync]").forEach(btn=>btn.addEventListener("click",async()=>{
+   btn.disabled=true;$("youtube-status").textContent="Synchronizing official YouTube statistics…";
+   try{const d=await fetchJSON("/api/ops/social/youtube/"+encodeURIComponent(btn.dataset.youtubeSync)+"/sync",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});$("youtube-status").textContent="Official public subscribers: "+(d.subscriberCount==null?"hidden":d.subscriberCount)+". No reach or impression claims made.";await loadSocialCoverage();}
+   catch(e){$("youtube-status").textContent="Official sync unavailable: "+e.message;btn.disabled=false;}
+  }));
  }catch(err){root.textContent="Social coverage requires superadmin access: "+err.message;}
 }
 
@@ -552,6 +570,7 @@ document.addEventListener("DOMContentLoaded",async()=>{
  $("operations-refresh").addEventListener("click",loadOperations);
  $("operations-run-check").addEventListener("click",runOperationalCheck);
  $("notification-form").addEventListener("submit",queueNotification);
+ $("youtube-connection-form").addEventListener("submit",connectYouTube);
  $("membership-form").addEventListener("submit",grantMembership);
  $("contract-draft-form").addEventListener("submit",submitDraftContract);
  $("invoice-draft-form").addEventListener("submit",submitDraftInvoice);
