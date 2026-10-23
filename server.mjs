@@ -284,7 +284,7 @@ async function accountRegister(req,res){
  if(!rateLimit(req,"register",4,3600000))return fail(res,429,"Too many registrations");
  let b;try{b=await body(req);}catch(e){return fail(res,400,e.message);}
  const email=text(b.email,254).toLowerCase(),name=text(b.name,120),role=text(b.role,30);
- if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)||name.length<2||!["customer","artist"].includes(role))return fail(res,400,"Valid name, email and role required");
+ if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||name.length<2||!["customer","artist"].includes(role))return fail(res,400,"Valid name, email and role required");
  let pass;try{pass=hashPassword(b.password);}catch(e){return fail(res,400,e.message);}
  try{
   const r=await pool.query("INSERT INTO hub_accounts(email,password_hash,display_name,role) VALUES($1,$2,$3,$4) RETURNING id,email,display_name,role",[email,pass,name,role]);
