@@ -111,6 +111,20 @@
       <div id="operations-message" class="message" role="status"></div>
       <div id="operations-content" class="metrics-grid"></div>
       <button id="operations-refresh" class="outline-button" type="button">Refresh live counts ↗</button>
+      <div class="dash-card" style="margin-top:24px"><h3>Contract & invoice drafting</h3><p>Superadmin only. These forms create internal drafts for a booking reference; they do not sign contracts or collect payments.</p>
+       <form id="contract-draft-form" class="demo-booking-form">
+        <label>Booking reference<input id="contract-booking-id" required placeholder="UUID of booking enquiry"></label>
+        <label>Contract title<input id="contract-title" required minlength="4" value="CABO Artist Performance Agreement"></label>
+        <label>Terms<textarea id="contract-terms" required minlength="20" rows="4" placeholder="Proposed performance obligations, parties, cancellation terms and fees."></textarea></label>
+        <button class="primary-button" type="submit">Create draft contract ↗</button>
+       </form>
+       <form id="invoice-draft-form" class="demo-booking-form">
+        <label>Booking reference<input id="invoice-booking-id" required placeholder="UUID of booking enquiry"></label>
+        <label>Invoice amount (ZAR)<input id="invoice-amount" type="number" min="0.01" max="100000000" step="0.01" required></label>
+        <button class="primary-button" type="submit">Create draft invoice ↗</button>
+       </form>
+       <p id="finance-draft-message" class="message" role="status"></p><div id="finance-ledger"></div>
+      </div>
     </div>
     <div id="ai-panel" class="studio-panel" hidden>
       <div class="panel-intro"><h2>Creative career advisor <span class="ai-label">GROQ AI / OPTIONAL</span></h2><p>Get practical advice for the selected fictional artist. The AI feature requires your management token and a server-side Groq key. It does not use real social feeds or financial documents.</p></div>
