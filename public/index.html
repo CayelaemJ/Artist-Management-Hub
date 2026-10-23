@@ -109,7 +109,22 @@
     </div>
     <div id="operations-panel" class="studio-panel" hidden>
       <div class="panel-intro"><h2>Operational readiness</h2><p>Superadmin-only view of registered accounts, bookings, contracts, invoices, notifications and external integrations. Counts are read from Neon; provider statuses are shown truthfully.</p></div>
-      <div id="operations-message" class="message" role="status"></div><div class="dash-card"><h3>Pending account approvals</h3><p>Confirm identity and email ownership independently before approving a production account.</p><div id="pending-accounts"></div>
+      <div id="operations-message" class="message" role="status"></div>
+      <section class="dash-card" aria-labelledby="analytics-title">
+       <div class="analytics-toolbar">
+        <div><span class="eyebrow">MANAGEMENT REPORTING / NEON</span><h3 id="analytics-title">Booking pipeline & artist intelligence</h3></div>
+        <label>Reporting window
+         <select id="analytics-period" aria-label="Management analytics reporting window">
+          <option value="30">Last 30 days</option><option value="90" selected>Last 90 days</option><option value="365">Last 365 days</option>
+         </select>
+        </label>
+        <button id="analytics-refresh" type="button" class="outline-button">Refresh report ↗</button>
+       </div>
+       <p class="form-note">PR and Career Health scores describe fictional artists using illustrative weighted models. Booking requests are not confirmed gigs. This report never displays contact details.</p>
+       <p id="analytics-status" role="status" class="message"></p>
+       <div id="analytics-summary" class="metrics-grid"></div>
+       <div id="analytics-breakdown" class="analytics-columns"></div>
+      </section><div class="dash-card"><h3>Pending account approvals</h3><p>Confirm identity and email ownership independently before approving a production account.</p><div id="pending-accounts"></div>
 <form id="membership-form" class="demo-booking-form"><label>Approved artist account ID<input id="membership-account" required placeholder="Account UUID"></label><label>Artist<select id="membership-artist" required></select></label><label>Permission<select id="membership-role" required><option value="viewer">Viewer</option><option value="editor">Editor</option><option value="owner">Owner</option></select></label><button class="primary-button" type="submit">Grant artist permission ↗</button></form><p id="membership-message" class="message" role="status"></p></div>
       <div id="operations-content" class="metrics-grid"></div>
       <button id="operations-refresh" class="outline-button" type="button">Refresh live counts ↗</button><button id="operations-run-check" class="outline-button" type="button">Run and record health checks ↗</button><div class="dash-card"><h3>Booking notifications</h3><p>Internal queue only; delivery is not claimed until an outbound provider is connected.</p><form id="notification-form" class="demo-booking-form"><label>Booking reference<input id="notification-booking" required placeholder="Booking UUID"></label><label>Subject<input id="notification-subject" required minlength="4" value="CABO Booking Update"></label><label>Message<textarea id="notification-body" required minlength="10" rows="3"></textarea></label><button class="primary-button" type="submit">Queue in-app notification ↗</button></form><p id="notification-message" class="message" role="status"></p>
