@@ -10,6 +10,9 @@ jobs:
           name: Install production dependencies
           command: npm install --omit=dev
       - run:
+          name: Audit production dependencies for high-severity vulnerabilities
+          command: npm audit --omit=dev --audit-level=high
+      - run:
           name: Syntax and backend tests
           command: npm run check && npm test
       - run:
