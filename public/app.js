@@ -16,7 +16,7 @@ const money=v=>new Intl.NumberFormat("en-ZA",{style:"currency",currency:"ZAR",ma
 const prettyDate=v=>{const d=String(v).slice(0,10);return new Date(d+"T12:00:00").toLocaleDateString("en-ZA",{day:"numeric",month:"short",year:"numeric"});};
 const PR_NAMES=["Media sentiment","Craft & achievements","Booking reliability","Reputation trajectory","Credible engagement","Industry relationships","Constructive communication"];
 const CAREER_NAMES=["Financial stability","Booking momentum","Relative audience growth","Professional development","Workload balance"];
-let artists=[],filter="all",adminToken="",currentArtist="",allowedTransitions={},demoAccount=null;
+let artists=[],filter="all",adminToken="",currentArtist="",allowedTransitions={},demoAccount=null,realAccount=null;
 const fetchJSON=async(url,options={})=>{
  const r=await fetch(url,options);let d;
  try{d=await r.json();}catch{d={error:"Unexpected server response"};}
@@ -47,6 +47,10 @@ function openBooking(slug){
  const a=artists.find(a=>a.slug===slug);
  if(!a)return;
  $("booking-form").reset();
+ if(realAccount?.role==="customer"){
+  $("booking-form").elements.namedItem("name").value=realAccount.name;
+  $("booking-form").elements.namedItem("email").value=realAccount.email;
+ }
  $("booking-slug").value=slug;
  $("booking-artist-name").textContent=a.stage_name+" · "+a.genre;
  $("booking-status").textContent=publicPreviewOnly?"Booking requests are temporarily unavailable while the live database connection is being configured. Please do not enter private details.":"";
@@ -169,8 +173,17 @@ async function refreshFinanceLedger(){
  try{
   const d=await fetchJSON("/api/ops/finance");
   root.innerHTML='<h3>Contract drafts ('+d.contracts.length+')</h3>'+d.contracts.map(c=>'<p>'+esc(c.title)+' · '+esc(c.status)+' · booking '+esc(c.booking_id)+'</p>').join("")+
-  '<h3>Invoice drafts ('+d.invoices.length+')</h3>'+d.invoices.map(i=>'<p>'+esc(i.invoice_number)+' · '+esc(i.status)+' · '+money(Number(i.amount_cents)/100)+' · paid '+money(Number(i.paid_cents)/100)+'</p>').join("")+
+  '<h3>Invoices ('+d.invoices.length+')</h3>'+d.invoices.map(i=>'<article class="enquiry-item"><p>'+esc(i.invoice_number)+' · '+esc(i.status)+' · '+money(Number(i.amount_cents)/100)+' · paid '+money(Number(i.paid_cents)/100)+'</p><small>Reference: '+esc(i.id)+'</small> '+(i.status==='draft'?'<button class="outline-button" type="button" data-issue-invoice="'+esc(i.id)+'">Issue invoice ↗</button>':'')+'</article>').join("")+
   '<p class="form-note">No payments or signatures are implied by draft documents.</p>';
+  root.querySelectorAll("[data-issue-invoice]").forEach(btn=>btn.addEventListener("click",async()=>{
+   if(!confirm("Issue this invoice? This does not email the customer or collect payment."))return;
+   btn.disabled=true;
+   try{
+    await fetchJSON("/api/ops/invoices/"+encodeURIComponent(btn.dataset.issueInvoice)+"/issue",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({confirm:true})});
+    $("finance-draft-message").textContent="Invoice marked issued; no email or payment collected.";
+    await refreshFinanceLedger();
+   }catch(err){$("finance-draft-message").textContent=err.message;btn.disabled=false;}
+  }));
  }catch(e){root.textContent="Cannot load finance records: "+e.message;}
 }
 async function submitDraftContract(e){
@@ -181,6 +194,24 @@ async function submitDraftContract(e){
   msg.textContent=r.notice+" Reference: "+r.contract.id;await refreshFinanceLedger();
  }catch(err){msg.textContent=err.message;}
 }
+
+async function submitVerifiedPayment(e){
+ e.preventDefault();
+ const message=$("finance-draft-message"),button=e.currentTarget.querySelector('button[type="submit"]');
+ if(!$("manual-payment-confirm").checked)return;
+ button.disabled=true;message.textContent="Recording independently verified bank receipt…";
+ try{
+  const data=await fetchJSON("/api/ops/invoices/"+encodeURIComponent($("manual-payment-invoice").value.trim())+"/manual-payment",{
+   method:"POST",headers:{"Content-Type":"application/json"},
+   body:JSON.stringify({bankReference:$("manual-payment-reference").value.trim(),amountZar:Number($("manual-payment-amount").value),confirmVerified:true})
+  });
+  message.textContent=data.notice;
+  if(!data.duplicate)$("manual-payment-form").reset();
+  await refreshFinanceLedger();
+ }catch(err){message.textContent="Payment not recorded: "+err.message;}
+ finally{button.disabled=false;}
+}
+
 async function submitDraftInvoice(e){
  e.preventDefault();
  const msg=$("finance-draft-message");msg.textContent="Creating invoice draft…";
@@ -252,11 +283,29 @@ async function runOperationalCheck(){
 }
 
 
+
+async function connectYouTube(e){
+ e.preventDefault();
+ const status=$("youtube-status"),btn=e.currentTarget.querySelector('button[type="submit"]');
+ btn.disabled=true;status.textContent="Registering consented YouTube channel…";
+ try{
+  const r=await fetchJSON("/api/ops/social/youtube/connect",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({artistSlug:$("youtube-artist").value,channelId:$("youtube-channel-id").value.trim(),consentConfirmed:$("youtube-consent").checked})});
+  status.textContent=r.notice;await loadSocialCoverage();
+ }catch(err){status.textContent=err.message;}
+ finally{btn.disabled=false;}
+}
+
 async function loadSocialCoverage(){
  const root=$("social-provider-coverage");
  try{
   const d=await fetchJSON("/api/ops/social");
-  root.innerHTML=d.connections.length?d.connections.map(c=>'<p>'+esc(c.stage_name)+' · '+esc(c.platform)+' · last synchronized: '+(c.last_synced_at?prettyDate(c.last_synced_at):'Not yet')+'</p>').join(""):'<p>No approved official social integrations connected yet. Demo social signals are illustrative only.</p>';
+  root.innerHTML=d.connections.length?d.connections.map(c=>'<article class="enquiry-item"><strong>'+esc(c.stage_name)+'</strong> · '+esc(c.platform)+'<p>Last official sync: '+(c.last_synced_at?prettyDate(c.last_synced_at):'Not yet')+' · followers: '+(c.latest_followers==null?'Not available':esc(c.latest_followers))+'</p>'+(c.platform==="youtube"?'<button class="outline-button" type="button" data-youtube-sync="'+esc(c.id)+'">Sync official YouTube data ↗</button>':'')+'</article>').join(""):'<p>No approved official social integrations connected yet. Demo social signals are illustrative only.</p>';
+  $("youtube-artist").innerHTML=artists.map(a=>'<option value="'+esc(a.slug)+'">'+esc(a.stage_name)+'</option>').join("");
+  root.querySelectorAll("[data-youtube-sync]").forEach(btn=>btn.addEventListener("click",async()=>{
+   btn.disabled=true;$("youtube-status").textContent="Synchronizing official YouTube statistics…";
+   try{const d=await fetchJSON("/api/ops/social/youtube/"+encodeURIComponent(btn.dataset.youtubeSync)+"/sync",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});$("youtube-status").textContent="Official public subscribers: "+(d.subscriberCount==null?"hidden":d.subscriberCount)+". No reach or impression claims made.";await loadSocialCoverage();}
+   catch(e){$("youtube-status").textContent="Official sync unavailable: "+e.message;btn.disabled=false;}
+  }));
  }catch(err){root.textContent="Social coverage requires superadmin access: "+err.message;}
 }
 
@@ -272,6 +321,26 @@ async function loadOperations(){
   await loadOperationalHistory();
  }catch(e){status.textContent="Superadmin access required: "+e.message;$("operations-content").innerHTML="";}
 }
+
+async function handleEmailVerificationLink(){
+ const token=/^#verify=([a-f0-9]{64})$/i.exec(location.hash)?.[1];
+ if(!token)return;
+ history.replaceState(history.state,"",location.pathname+location.search);
+ const banner=$("verification-banner");banner.hidden=false;banner.textContent="Verifying account email…";
+ try{
+  const d=await fetchJSON("/api/accounts/verify-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token})});
+  banner.textContent=d.message;
+ }catch(e){banner.textContent="Verification failed: "+e.message;}
+}
+async function resendEmailVerification(){
+ const status=$("real-account-message"),email=$("real-email").value.trim();
+ if(!email){status.textContent="Enter your email address first.";return;}
+ try{
+  const d=await fetchJSON("/api/accounts/resend-verification",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email})});
+  status.textContent=d.message;
+ }catch(e){status.textContent=e.message;}
+}
+
 async function registerRealAccount(e){
  e.preventDefault();const status=$("real-account-message"),button=e.currentTarget.querySelector('button[type="submit"]');
  button.disabled=true;status.textContent="Creating account…";
@@ -329,7 +398,7 @@ async function askAI(e){
  if(!adminToken&&!superadminActive){answer.textContent="Sign in as superadmin or supply a management token under Booking management first.";return;}
  try{
   const d=await fetchJSON("/api/ai/advice",postJSON("POST",{artistSlug:$("ai-artist").value,question:$("ai-question").value}));
-  answer.textContent=d.answer+"\n\n— AI-generated advice based on synthetic demo data. Review before using.";
+  answer.textContent=d.answer+"\n\n— "+(d.aiGenerated?"Groq AI-generated advice":"Offline rule-based preview (not AI-generated)")+" based only on fictional inputs. Review before use.";
  }catch(err){answer.textContent="AI not available: "+err.message;}
 }
 
@@ -340,10 +409,11 @@ function signInDialog(){
 }
 function setDemoUI(account){
  demoAccount=account;
- $("open-signin").hidden=Boolean(account);
- $("my-account").hidden=!account;
- $("signout-button").hidden=!account;
- $("my-account").textContent=account?"My "+account.role+" studio":"My demo studio";
+ const active=realAccount||account;
+ $("open-signin").hidden=Boolean(active);
+ $("my-account").hidden=!active;
+ $("signout-button").hidden=!active;
+ $("my-account").textContent=realAccount?"My verified "+realAccount.role+" account":account?"My "+account.role+" studio":"My studio";
 }
 async function restoreDemoSession(){
  try{
@@ -387,10 +457,59 @@ async function sendDemoBooking(e){
  finally{button.disabled=false;}
 }
 
+
+async function restoreRealAccount(){
+ try{const d=await fetchJSON("/api/accounts/me");realAccount=d.account;}
+ catch{realAccount=null;}
+ setDemoUI(demoAccount);
+}
+async function renderVerifiedWorkspace(root){
+ if(!realAccount)return;
+ root.innerHTML='<div class="demo-welcome"><span class="eyebrow">VERIFIED ACCOUNT / '+esc(realAccount.role.toUpperCase())+'</span><h3>'+esc(realAccount.name)+'</h3><p>'+esc(realAccount.email)+' · These are your permission-scoped records, not demonstration data.</p></div><section class="demo-tasks" id="verified-account-data"><p class="loading">Loading access-scoped records…</p></section>';
+ const area=$("verified-account-data");
+ try{
+  if(realAccount.role==="customer"){
+   const d=await fetchJSON("/api/accounts/bookings");
+   area.innerHTML='<h3>Your booking enquiries ('+d.bookings.length+')</h3>'+d.bookings.map(b=>'<article class="enquiry-item"><strong>'+esc(b.stage_name)+'</strong><p>'+esc(b.event_type)+' · '+prettyDate(b.event_date)+' · '+esc(b.venue)+'</p><p>Status: '+esc(b.status)+' · Reference: '+esc(b.id)+'</p></article>').join("")+
+     '<p class="form-note">Only bookings submitted while signed in to this verified customer account appear here. Guest requests require separate ownership verification.</p>';
+  }else if(realAccount.role==="artist"){
+   const d=await fetchJSON("/api/accounts/artists");
+   area.innerHTML='<h3>Your permitted artists</h3>'+ (d.memberships.map(m=>'<article class="enquiry-item"><strong>'+esc(m.stage_name)+'</strong> · '+esc(m.access_role)+'<button type="button" class="outline-button" data-owned-artist="'+esc(m.slug)+'">View my artist dashboard ↗</button></article>').join("")||'<p>No artist assigned yet. Ask CABO management to approve a specific artist membership.</p>')+'<div id="verified-artist-dashboard"></div>';
+   area.querySelectorAll("[data-owned-artist]").forEach(btn=>btn.addEventListener("click",async()=>{
+    const out=$("verified-artist-dashboard");out.textContent="Loading your scoped artist data…";
+    try{
+     const d=await fetchJSON("/api/accounts/artist-dashboard/"+encodeURIComponent(btn.dataset.ownedArtist));
+     out.innerHTML='<h3>'+esc(d.artist.name)+'</h3><div class="demo-actions">'+kpi("PR SCORE",d.pr.score+"/100","ILLUSTRATIVE INDEX")+kpi("CAREER HEALTH",d.career.score+"/100","ILLUSTRATIVE INDEX")+kpi("YOUR BOOKINGS",d.bookings.length,"SCOPED RECORDS")+'</div><h4>Related booking events</h4>'+d.bookings.map(b=>'<p>'+esc(b.event_type)+' · '+prettyDate(b.event_date)+' · '+esc(b.status)+'</p>').join("");
+    }catch(err){out.textContent=err.message;}
+   }));
+  }else{area.textContent="Your role requires a dedicated access review.";}
+ }catch(err){area.textContent="Could not load account records: "+err.message;}
+}
+async function realLogin(e){
+ e.preventDefault();const msg=$("real-login-message"),btn=e.currentTarget.querySelector('button[type="submit"]');
+ btn.disabled=true;msg.textContent="Signing in…";
+ try{
+  const d=await fetchJSON("/api/accounts/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:$("real-login-email").value,password:$("real-login-password").value})});
+  $("real-login-password").value="";
+  realAccount=d.account;
+  await fetchJSON("/api/demo-auth/logout",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"}).catch(()=>{});
+  setDemoUI(null);
+  $("real-login-dialog").close();
+  showStudio("demo");
+ }catch(err){msg.textContent=err.message;}
+ finally{btn.disabled=false;}
+}
+async function realLogout(){
+ try{await fetchJSON("/api/accounts/logout",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});}
+ catch(err){console.warn("Verified account logout could not be confirmed.");return;}
+ realAccount=null;setDemoUI(demoAccount);showPublic();
+}
+
 async function loadDemoWorkspace(){
  const root=$("demo-workspace-content");
  if(!demoAccount){
   $("demo-booking-area").hidden=true;
+  if(realAccount){await renderVerifiedWorkspace(root);return;}
   root.innerHTML='<div class="demo-welcome"><h3>Sign in to your demo workspace</h3><p>Choose Customer, Artist or Manager. Each role is fully synthetic, with no access to confidential records.</p></div><button class="primary-button" id="workspace-signin" type="button">Choose an account ↗</button>';
   $("workspace-signin").addEventListener("click",signInDialog);
   return;
@@ -427,6 +546,7 @@ async function submitDemoSignIn(e){
  finally{btn.disabled=false;}
 }
 async function signOutDemo(){
+ if(realAccount&&!demoAccount)return realLogout();
  try{await fetchJSON("/api/demo-auth/logout",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});}catch(e){console.warn("Could not confirm demo sign out; retry before using a shared device.");return;}
  setDemoUI(null);
  showPublic();
@@ -442,12 +562,19 @@ document.addEventListener("DOMContentLoaded",async()=>{
  $("open-real-account").addEventListener("click",()=>{$("signin-dialog").close();$("real-account-message").textContent="";$("real-account-dialog").showModal();});
  $("close-real-account").addEventListener("click",()=>$("real-account-dialog").close());
  $("real-account-form").addEventListener("submit",registerRealAccount);
+ $("resend-email-verification").addEventListener("click",resendEmailVerification);
+ await handleEmailVerificationLink();
+ $("open-real-login").addEventListener("click",()=>{$("signin-dialog").close();$("real-login-message").textContent="";$("real-login-dialog").showModal();});
+ $("close-real-login").addEventListener("click",()=>$("real-login-dialog").close());
+ $("real-login-form").addEventListener("submit",realLogin);
  $("operations-refresh").addEventListener("click",loadOperations);
  $("operations-run-check").addEventListener("click",runOperationalCheck);
  $("notification-form").addEventListener("submit",queueNotification);
+ $("youtube-connection-form").addEventListener("submit",connectYouTube);
  $("membership-form").addEventListener("submit",grantMembership);
  $("contract-draft-form").addEventListener("submit",submitDraftContract);
  $("invoice-draft-form").addEventListener("submit",submitDraftInvoice);
+ $("manual-payment-form").addEventListener("submit",submitVerifiedPayment);
  $("demo-booking-form").addEventListener("submit",sendDemoBooking);
  $("toggle-password").addEventListener("click",()=>{const input=$("signin-password");const visible=input.type==="password";input.type=visible?"text":"password";$("toggle-password").textContent=visible?"Hide":"Show";});
  document.querySelectorAll("[data-demo-email]").forEach(b=>b.addEventListener("click",()=>{
@@ -456,6 +583,7 @@ document.addEventListener("DOMContentLoaded",async()=>{
   $("signin-password").focus();
  }));
  await restoreDemoSession();
+ await restoreRealAccount();
  $("nav-book").addEventListener("click",()=>{showPublic();$("artists").scrollIntoView({behavior:"smooth"});});
  document.querySelectorAll(".studio-tab").forEach(tab=>tab.addEventListener("click",()=>showStudio(tab.dataset.panel)));
  $("artist-search").addEventListener("input",renderRoster);

@@ -12,6 +12,7 @@
  <script src="/app.js" defer></script>
 </head>
 <body>
+ <p id="verification-banner" class="form-note" role="status" hidden style="padding:12px 24px"></p>
  <div class="demo-ribbon">CABO ARTIST HUB <span class="dot"></span> EARLY DEMONSTRATION <span class="dot"></span> FICTIONAL ARTISTS & SYNTHETIC INSIGHTS</div>
  <header class="site-header">
    <a class="brand" href="/" aria-label="CABO Artist Hub home">
@@ -111,7 +112,13 @@
       <div id="operations-message" class="message" role="status"></div><div class="dash-card"><h3>Pending account approvals</h3><p>Confirm identity and email ownership independently before approving a production account.</p><div id="pending-accounts"></div>
 <form id="membership-form" class="demo-booking-form"><label>Approved artist account ID<input id="membership-account" required placeholder="Account UUID"></label><label>Artist<select id="membership-artist" required></select></label><label>Permission<select id="membership-role" required><option value="viewer">Viewer</option><option value="editor">Editor</option><option value="owner">Owner</option></select></label><button class="primary-button" type="submit">Grant artist permission ↗</button></form><p id="membership-message" class="message" role="status"></p></div>
       <div id="operations-content" class="metrics-grid"></div>
-      <button id="operations-refresh" class="outline-button" type="button">Refresh live counts ↗</button><button id="operations-run-check" class="outline-button" type="button">Run and record health checks ↗</button><div class="dash-card"><h3>Booking notifications</h3><p>Internal queue only; delivery is not claimed until an outbound provider is connected.</p><form id="notification-form" class="demo-booking-form"><label>Booking reference<input id="notification-booking" required placeholder="Booking UUID"></label><label>Subject<input id="notification-subject" required minlength="4" value="CABO Booking Update"></label><label>Message<textarea id="notification-body" required minlength="10" rows="3"></textarea></label><button class="primary-button" type="submit">Queue in-app notification ↗</button></form><p id="notification-message" class="message" role="status"></p><div id="notification-list"></div></div><div class="dash-card"><h3>Official social media data coverage</h3><p>Live data is only shown when an artist has approved a provider integration. Demo signals remain synthetic.</p><div id="social-provider-coverage"></div></div><div id="operations-health-history" class="dash-card"><h3>Operational health history</h3><p>No checks loaded yet.</p></div>
+      <button id="operations-refresh" class="outline-button" type="button">Refresh live counts ↗</button><button id="operations-run-check" class="outline-button" type="button">Run and record health checks ↗</button><div class="dash-card"><h3>Booking notifications</h3><p>Internal queue only; delivery is not claimed until an outbound provider is connected.</p><form id="notification-form" class="demo-booking-form"><label>Booking reference<input id="notification-booking" required placeholder="Booking UUID"></label><label>Subject<input id="notification-subject" required minlength="4" value="CABO Booking Update"></label><label>Message<textarea id="notification-body" required minlength="10" rows="3"></textarea></label><button class="primary-button" type="submit">Queue in-app notification ↗</button></form><p id="notification-message" class="message" role="status"></p><div id="notification-list"></div></div><div class="dash-card"><h3>Official social media data coverage</h3><p>Live data is only shown when an artist has approved a provider integration. Demo signals remain synthetic.</p><div id="social-provider-coverage"></div><form id="youtube-connection-form" class="demo-booking-form">
+ <label>Artist<select id="youtube-artist" required></select></label>
+ <label>Official YouTube channel ID<input id="youtube-channel-id" placeholder="UCxxxxxxxxxxxxxxxxxxxxxx" required pattern="UC[A-Za-z0-9_-]{22}"></label>
+ <label><input id="youtube-consent" type="checkbox" required> I have the artist's permission to connect and review this public channel.</label>
+ <button class="primary-button" type="submit">Register official YouTube source ↗</button>
+ </form><p id="youtube-status" class="message" role="status"></p>
+ <p class="form-note">Synchronizing requires server-side YOUTUBE_API_KEY. Public subscribers can be read when available; impressions and reach require additional authorized scopes. This is separate from synthetic PR sentiment.</p></div><div id="operations-health-history" class="dash-card"><h3>Operational health history</h3><p>No checks loaded yet.</p></div>
       <div class="dash-card" style="margin-top:24px"><h3>Contract & invoice drafting</h3><p>Superadmin only. These forms create internal drafts for a booking reference; they do not sign contracts or collect payments.</p>
        <form id="contract-draft-form" class="demo-booking-form">
         <label>Booking reference<input id="contract-booking-id" required placeholder="UUID of booking enquiry"></label>
@@ -125,6 +132,15 @@
         <button class="primary-button" type="submit">Create draft invoice ↗</button>
        </form>
        <p id="finance-draft-message" class="message" role="status"></p><div id="finance-ledger"></div>
+       <form id="manual-payment-form" class="demo-booking-form">
+        <h3>Record verified bank transfer</h3>
+        <p>Enter this only after independently verifying a real bank receipt. The platform does not collect money.</p>
+        <label>Issued invoice ID<input id="manual-payment-invoice" required placeholder="Invoice UUID"></label>
+        <label>Verified bank reference<input id="manual-payment-reference" required minlength="6" maxlength="120"></label>
+        <label>Payment amount (ZAR)<input id="manual-payment-amount" type="number" min="0.01" max="100000000" step="0.01" required></label>
+        <label><input id="manual-payment-confirm" type="checkbox" required> I have independently verified this payment against the bank statement.</label>
+        <button class="primary-button" type="submit">Record verified payment ↗</button>
+       </form>
       </div>
     </div>
     <div id="ai-panel" class="studio-panel" hidden>
@@ -136,6 +152,15 @@
  </main>
 
  <footer><div class="footer-brand"><span class="brand-mark">C✳</span><div><strong>CABO ARTIST HUB</strong><small>BEYOND THE SPOTLIGHT.</small></div></div><p>Powered by CABO Solutions. Built for people creating the next chapter.</p><span>© 2026 CABO SOLUTIONS · PROTOTYPE</span></footer>
+ <dialog id="real-login-dialog" class="auth-dialog" aria-labelledby="real-login-heading">
+   <form id="real-login-form" class="booking-form">
+     <div class="dialog-top"><div><span class="eyebrow">CABO ARTIST HUB / VERIFIED MEMBERS</span><h2 id="real-login-heading">Your <em>account.</em></h2><p>Use your personal credentials after superadmin identity approval.</p></div><button id="close-real-login" class="close-btn" type="button" aria-label="Close login">✕</button></div>
+     <label for="real-login-email">Email</label><input id="real-login-email" type="email" autocomplete="username" required>
+     <label for="real-login-password">Password</label><input id="real-login-password" type="password" autocomplete="current-password" required>
+     <p id="real-login-message" class="message" role="status"></p>
+     <button class="primary-button full-width" type="submit">Sign in to verified account ↗</button>
+   </form>
+ </dialog>
  <dialog id="real-account-dialog" class="auth-dialog" aria-labelledby="real-account-heading">
  <form id="real-account-form" class="booking-form">
   <div class="dialog-top"><div><span class="eyebrow">PRODUCTION ACCOUNTS / RESTRICTED PILOT</span><h2 id="real-account-heading">Create your <em>account.</em></h2><p>Individual accounts have no access to artist private data before verification and permission approval.</p></div><button id="close-real-account" class="close-btn" type="button" aria-label="Close account registration">✕</button></div>
@@ -143,12 +168,14 @@
   <label for="real-email">Email address</label><input id="real-email" name="email" type="email" required maxlength="254" autocomplete="email">
   <label for="real-role">Account type</label><select id="real-role" name="role" required><option value="customer">Customer</option><option value="artist">Artist</option></select>
   <label for="real-password">Password (minimum 12 characters)</label><input id="real-password" name="password" type="password" required minlength="12" maxlength="128" autocomplete="new-password">
-  <p class="form-note">This pilot records your registration but cannot activate access until the verification service and approval workflow are configured. Do not use this for urgent bookings.</p>
+  <p class="form-note">A verification email is sent only when email delivery is configured. Otherwise CABO staff must verify your email ownership manually. Artist access also requires management approval.</p>
+ <button id="resend-email-verification" class="outline-button" type="button">Resend email verification ↗</button>
   <p id="real-account-message" class="message" role="status"></p><button class="primary-button full-width" type="submit">Create pending account ↗</button>
  </form></dialog>
  <dialog id="signin-dialog" class="auth-dialog" aria-labelledby="signin-heading">
    <form id="signin-form" class="booking-form">
      <div class="dialog-top"><div><span class="eyebrow">CABO ARTIST HUB / DEMO ACCESS</span><h2 id="signin-heading">Welcome <em>back.</em></h2><p>Explore a fictional workspace for your role.</p></div><button id="close-signin" type="button" class="close-btn" aria-label="Close sign-in">✕</button></div>
+     <button id="open-real-login" type="button" class="outline-button">Sign in to an approved customer / artist account ↗</button>
      <button id="open-real-account" type="button" class="outline-button">Register a real account (pending verification) ↗</button><p class="auth-notice">These accounts are for demonstration only. Password <strong>12345</strong> works on the three demo roles and cannot unlock real bookings, admin actions or private data.</p>
      <div class="role-buttons" aria-label="Choose demo account"><button class="role-choice" type="button" data-demo-email="customer.demo@cabo.test">Customer</button><button class="role-choice" type="button" data-demo-email="artist.demo@cabo.test">Artist</button><button class="role-choice" type="button" data-demo-email="manager.demo@cabo.test">Manager</button></div>
      <label for="signin-email">Demo email</label><input id="signin-email" name="email" type="email" autocomplete="username" maxlength="160" required placeholder="customer.demo@cabo.test">
