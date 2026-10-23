@@ -50,3 +50,9 @@ Sign-in for real individual accounts, permissions/tenant isolation, identity che
 ## Dashboard demonstration (October 2026)
 
 Open `/studio`, choose **Career dashboard**, and select one of the eight fictional artists. The comprehensive prototype view includes weighted PR and Career Health indices, individual factor breakdowns, completed-gig revenue and expenses, profit, confirmed future fees, sample gigs and social mentions, and transparent recommendations. When `DATABASE_URL` is unavailable, the screen automatically displays a clearly labelled **local synthetic preview**; the booking form remains unavailable until persistence is configured. All demo values are illustrative, not factual achievements, real revenue, live social listening, or medical/psychological assessment.
+
+## Phase 7 — secure password recovery
+
+Verified customer and artist accounts can request password recovery from the **Sign in → Forgot password** screen. If mail delivery is configured, CABO sends a single-use recovery link. Raw tokens exist only in the email URL fragment; the database stores their SHA-256 hash. Links expire after **30 minutes**. A successful reset revokes **all current account sessions** and invalidates outstanding recovery links. Unknown accounts receive the same generic response as known accounts, with request throttling. Admin/demo credentials cannot be reset using this route.
+
+Production email requires the private Render environment values `RESEND_API_KEY`, a verified `VERIFICATION_FROM_EMAIL` sender, and optionally `PUBLIC_BASE_URL`. Without those, the recovery request is accepted generically but **no recovery email is sent**. Never put recovery tokens, Resend API keys, database credentials or passwords in GitHub, browser telemetry or application logs. An administrator must use a verified manual identity-recovery policy if the email integration is unavailable.

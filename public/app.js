@@ -550,6 +550,57 @@ async function renderVerifiedWorkspace(root){
  }catch(err){area.textContent="Could not load account records: "+err.message;}
  await loadVerifiedNotifications();
 }
+
+let activeResetToken=null;
+function openPasswordRecovery(token=null){
+ activeResetToken=token;
+ const resetting=Boolean(token);
+ $("password-recovery-request-form").hidden=resetting;
+ $("password-recovery-complete-form").hidden=!resetting;
+ $("password-recovery-message").textContent=resetting?"Enter a new password. This single-use link expires after 30 minutes.":"If a verified account exists and email delivery is available, we'll send recovery instructions.";
+ if(!resetting)$("password-recovery-email").value=$("real-login-email").value.trim();
+ $("real-login-dialog").close();
+ $("password-recovery-dialog").showModal();
+}
+async function handlePasswordRecoveryLink(){
+ const token=/^#reset=([a-f0-9]{64})$/i.exec(location.hash)?.[1];
+ if(!token)return;
+ history.replaceState(history.state,"",location.pathname+location.search);
+ openPasswordRecovery(token);
+}
+async function requestPasswordRecovery(e){
+ e.preventDefault();
+ const button=e.currentTarget.querySelector('button[type="submit"]'),msg=$("password-recovery-message");
+ button.disabled=true;msg.textContent="Checking recovery options…";
+ try{
+  const result=await fetchJSON("/api/accounts/request-password-reset",{
+   method:"POST",headers:{"Content-Type":"application/json"},
+   body:JSON.stringify({email:$("password-recovery-email").value.trim()})
+  });
+  msg.textContent=result.message;
+ }catch(err){msg.textContent="Recovery request unavailable: "+err.message;}
+ finally{button.disabled=false;}
+}
+async function completePasswordRecovery(e){
+ e.preventDefault();const msg=$("password-recovery-message"),button=e.currentTarget.querySelector('button[type="submit"]');
+ const password=$("password-recovery-new").value;
+ if(password!==$("password-recovery-confirm").value){msg.textContent="Passwords don't match.";return;}
+ if(!activeResetToken){msg.textContent="Your recovery link is missing. Request a new link.";return;}
+ button.disabled=true;msg.textContent="Updating password and revoking existing sessions…";
+ try{
+  const result=await fetchJSON("/api/accounts/reset-password",{
+   method:"POST",headers:{"Content-Type":"application/json"},
+   body:JSON.stringify({token:activeResetToken,password})
+  });
+  activeResetToken=null;
+  $("password-recovery-complete-form").reset();
+  $("password-recovery-complete-form").hidden=true;
+  realAccount=null;setDemoUI(demoAccount);
+  msg.textContent=result.message;
+ }catch(err){msg.textContent="Password could not be reset: "+err.message;}
+ finally{button.disabled=false;}
+}
+
 async function realLogin(e){
  e.preventDefault();const msg=$("real-login-message"),btn=e.currentTarget.querySelector('button[type="submit"]');
  btn.disabled=true;msg.textContent="Signing in…";
@@ -632,6 +683,11 @@ document.addEventListener("DOMContentLoaded",async()=>{
  $("open-real-login").addEventListener("click",()=>{$("signin-dialog").close();$("real-login-message").textContent="";$("real-login-dialog").showModal();});
  $("close-real-login").addEventListener("click",()=>$("real-login-dialog").close());
  $("real-login-form").addEventListener("submit",realLogin);
+ $("open-password-recovery").addEventListener("click",()=>openPasswordRecovery());
+ $("close-password-recovery").addEventListener("click",()=>$("password-recovery-dialog").close());
+ $("password-recovery-request-form").addEventListener("submit",requestPasswordRecovery);
+ $("password-recovery-complete-form").addEventListener("submit",completePasswordRecovery);
+ await handlePasswordRecoveryLink();
  $("operations-refresh").addEventListener("click",loadOperations);
  $("operations-run-check").addEventListener("click",runOperationalCheck);
  $("notification-form").addEventListener("submit",queueNotification);

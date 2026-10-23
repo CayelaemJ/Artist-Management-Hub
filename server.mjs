@@ -299,6 +299,76 @@ async function accountRegister(req,res){
   return json(res,201,{account:r.rows[0],emailSent:sent,message:sent?"Account created. Check your inbox to verify email; management approval is also required.":"Account created, pending out-of-band email verification and management approval. Automatic email is not configured."});
  }catch(e){if(e.code==="23505")return fail(res,409,"Account already exists");throw e;}
 }
+
+const RESET_REQUEST_ACK="If an eligible account exists and email delivery is configured, password-reset instructions will be sent. Check your inbox.";
+async function requestAccountPasswordReset(req,res){
+ if(!validOrigin(req))return fail(res,403,"Origin not allowed");
+ if(!rateLimit(req,"account-reset-request",5,3600000))return fail(res,429,"Too many reset requests");
+ let data;try{data=await body(req);}catch(e){return fail(res,400,e.message);}
+ const email=text(data.email,254).toLowerCase();
+ if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return fail(res,400,"Enter a valid email address");
+ const ack=()=>json(res,200,{message:RESET_REQUEST_ACK});
+ if(!process.env.RESEND_API_KEY||!process.env.VERIFICATION_FROM_EMAIL)return ack();
+ const accounts=await pool.query("SELECT id,email FROM hub_accounts WHERE email=$1 AND disabled_at IS NULL AND email_verified_at IS NOT NULL",[email]);
+ if(!accounts.rowCount)return ack();
+ const a=accounts.rows[0];
+ const limit=await pool.query("SELECT count(*)::int AS n FROM account_password_resets WHERE account_id=$1 AND created_at>now()-interval '1 hour'",[a.id]);
+ if(limit.rows[0].n>=3)return ack();
+ const raw=crypto.randomBytes(32).toString("hex"),hashed=tokenHash(raw);
+ await pool.query("INSERT INTO account_password_resets(token_hash,account_id,expires_at) VALUES($1,$2,now()+interval '30 minutes')",[hashed,a.id]);
+ const origin=(process.env.PUBLIC_BASE_URL||"https://cabo-artist-hub.onrender.com").replace(/\/+$/,"");
+ const url=origin+"/#reset="+raw;
+ const payload={
+  from:process.env.VERIFICATION_FROM_EMAIL,to:[email],subject:"Reset your CABO Artist Hub password",
+  html:'<p>If you requested a CABO Artist Hub password reset, follow the link below.</p><p><a href="'+url+'">Reset password</a></p><p>This link expires in 30 minutes and works once. If you did not request it, you can ignore this message.</p>'
+ };
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);
+ try{
+  const response=await fetch("https://api.resend.com/emails",{
+   method:"POST",signal:controller.signal,
+   headers:{"Content-Type":"application/json",Authorization:"Bearer "+process.env.RESEND_API_KEY},
+   body:JSON.stringify(payload)
+  });
+  if(!response.ok)console.warn("Account recovery email unavailable; status "+response.status);
+ }catch(e){console.warn("Account recovery delivery unavailable",e?.name||"unknown");}
+ finally{clearTimeout(timer);}
+ return ack();
+}
+async function completeAccountPasswordReset(req,res){
+ if(!validOrigin(req))return fail(res,403,"Origin not allowed");
+ if(!rateLimit(req,"account-reset-complete",10,3600000))return fail(res,429,"Too many reset attempts");
+ let data;try{data=await body(req);}catch(e){return fail(res,400,e.message);}
+ const token=text(data.token,90);
+ if(!/^[a-f0-9]{64}$/.test(token))return fail(res,400,"Invalid or expired reset link");
+ let hashedPassword;
+ try{hashedPassword=hashPassword(data.password);}catch(e){return fail(res,400,e.message);}
+ const client=await pool.connect();
+ try{
+  await client.query("BEGIN");
+  const selected=await client.query(
+   "UPDATE account_password_resets SET consumed_at=now() WHERE token_hash=$1 AND consumed_at IS NULL AND expires_at>now() RETURNING account_id",
+   [tokenHash(token)]
+  );
+  if(!selected.rowCount){await client.query("ROLLBACK");return fail(res,400,"Invalid or expired reset link");}
+  const accountId=selected.rows[0].account_id;
+  const found=await client.query(
+   "SELECT id,password_hash FROM hub_accounts WHERE id=$1 AND disabled_at IS NULL AND email_verified_at IS NOT NULL FOR UPDATE",
+   [accountId]
+  );
+  if(!found.rowCount){await client.query("ROLLBACK");return fail(res,400,"Account unavailable");}
+  if(verifyPassword(data.password,found.rows[0].password_hash)){
+   await client.query("ROLLBACK");
+   return fail(res,400,"Choose a password that differs from your previous one");
+  }
+  await client.query("UPDATE hub_accounts SET password_hash=$1 WHERE id=$2",[hashedPassword,accountId]);
+  await client.query("DELETE FROM hub_sessions WHERE account_id=$1",[accountId]);
+  await client.query("UPDATE account_password_resets SET consumed_at=now() WHERE account_id=$1 AND consumed_at IS NULL",[accountId]);
+  await client.query("COMMIT");
+  res.setHeader("Set-Cookie",clearAccountCookie());
+  return json(res,200,{reset:true,message:"Password changed. All existing account sessions have been revoked. Sign in with your new password."});
+ }catch(e){await client.query("ROLLBACK");throw e;}finally{client.release();}
+}
+
 async function accountLogin(req,res){
  if(!validOrigin(req))return fail(res,403,"Origin not allowed");
  if(!rateLimit(req,"account-login",6,900000))return fail(res,429,"Too many attempts");
@@ -764,6 +834,8 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==="POST"&&url.pathname==="/api/accounts/register")return accountRegister(req,res);
   if(req.method==="POST"&&url.pathname==="/api/accounts/verify-email")return verifyEmail(req,res);
   if(req.method==="POST"&&url.pathname==="/api/accounts/resend-verification")return resendVerification(req,res);
+  if(req.method==="POST"&&url.pathname==="/api/accounts/request-password-reset")return requestAccountPasswordReset(req,res);
+  if(req.method==="POST"&&url.pathname==="/api/accounts/reset-password")return completeAccountPasswordReset(req,res);
   if(req.method==="POST"&&url.pathname==="/api/accounts/login")return accountLogin(req,res);
   if(req.method==="GET"&&url.pathname==="/api/accounts/me")return accountMe(req,res);
   if(req.method==="POST"&&url.pathname==="/api/accounts/logout")return accountLogout(req,res);

@@ -159,7 +159,26 @@
      <label for="real-login-password">Password</label><input id="real-login-password" type="password" autocomplete="current-password" required>
      <p id="real-login-message" class="message" role="status"></p>
      <button class="primary-button full-width" type="submit">Sign in to verified account ↗</button>
+     <button id="open-password-recovery" class="outline-button" type="button">Forgot password? ↗</button>
    </form>
+ </dialog>
+ <dialog id="password-recovery-dialog" class="auth-dialog" aria-labelledby="password-recovery-heading">
+   <div class="booking-form">
+    <div class="dialog-top"><div><span class="eyebrow">CABO ARTIST HUB / ACCOUNT SECURITY</span><h2 id="password-recovery-heading">Recover your <em>account.</em></h2><p>A one-time reset link is delivered to a verified email address when email delivery is configured.</p></div><button id="close-password-recovery" class="close-btn" type="button" aria-label="Close password recovery">✕</button></div>
+    <form id="password-recovery-request-form">
+      <label for="password-recovery-email">Account email</label>
+      <input id="password-recovery-email" type="email" required maxlength="254" autocomplete="email">
+      <button class="primary-button full-width" type="submit">Request reset link ↗</button>
+    </form>
+    <form id="password-recovery-complete-form" hidden>
+      <label for="password-recovery-new">New password (12–128 characters)</label>
+      <input id="password-recovery-new" type="password" autocomplete="new-password" required minlength="12" maxlength="128">
+      <label for="password-recovery-confirm">Confirm new password</label>
+      <input id="password-recovery-confirm" type="password" autocomplete="new-password" required minlength="12" maxlength="128">
+      <button class="primary-button full-width" type="submit">Reset password and revoke sessions ↗</button>
+    </form>
+    <p id="password-recovery-message" class="message" role="status"></p>
+   </div>
  </dialog>
  <dialog id="real-account-dialog" class="auth-dialog" aria-labelledby="real-account-heading">
  <form id="real-account-form" class="booking-form">
