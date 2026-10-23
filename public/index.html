@@ -125,6 +125,15 @@
         <button class="primary-button" type="submit">Create draft invoice ↗</button>
        </form>
        <p id="finance-draft-message" class="message" role="status"></p><div id="finance-ledger"></div>
+       <form id="manual-payment-form" class="demo-booking-form">
+        <h3>Record verified bank transfer</h3>
+        <p>Enter this only after independently verifying a real bank receipt. The platform does not collect money.</p>
+        <label>Issued invoice ID<input id="manual-payment-invoice" required placeholder="Invoice UUID"></label>
+        <label>Verified bank reference<input id="manual-payment-reference" required minlength="6" maxlength="120"></label>
+        <label>Payment amount (ZAR)<input id="manual-payment-amount" type="number" min="0.01" max="100000000" step="0.01" required></label>
+        <label><input id="manual-payment-confirm" type="checkbox" required> I have independently verified this payment against the bank statement.</label>
+        <button class="primary-button" type="submit">Record verified payment ↗</button>
+       </form>
       </div>
     </div>
     <div id="ai-panel" class="studio-panel" hidden>
