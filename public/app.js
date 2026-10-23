@@ -169,8 +169,17 @@ async function refreshFinanceLedger(){
  try{
   const d=await fetchJSON("/api/ops/finance");
   root.innerHTML='<h3>Contract drafts ('+d.contracts.length+')</h3>'+d.contracts.map(c=>'<p>'+esc(c.title)+' · '+esc(c.status)+' · booking '+esc(c.booking_id)+'</p>').join("")+
-  '<h3>Invoice drafts ('+d.invoices.length+')</h3>'+d.invoices.map(i=>'<p>'+esc(i.invoice_number)+' · '+esc(i.status)+' · '+money(Number(i.amount_cents)/100)+' · paid '+money(Number(i.paid_cents)/100)+'</p>').join("")+
+  '<h3>Invoices ('+d.invoices.length+')</h3>'+d.invoices.map(i=>'<article class="enquiry-item"><p>'+esc(i.invoice_number)+' · '+esc(i.status)+' · '+money(Number(i.amount_cents)/100)+' · paid '+money(Number(i.paid_cents)/100)+'</p><small>Reference: '+esc(i.id)+'</small> '+(i.status==='draft'?'<button class="outline-button" type="button" data-issue-invoice="'+esc(i.id)+'">Issue invoice ↗</button>':'')+'</article>').join("")+
   '<p class="form-note">No payments or signatures are implied by draft documents.</p>';
+  root.querySelectorAll("[data-issue-invoice]").forEach(btn=>btn.addEventListener("click",async()=>{
+   if(!confirm("Issue this invoice? This does not email the customer or collect payment."))return;
+   btn.disabled=true;
+   try{
+    await fetchJSON("/api/ops/invoices/"+encodeURIComponent(btn.dataset.issueInvoice)+"/issue",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({confirm:true})});
+    $("finance-draft-message").textContent="Invoice marked issued; no email or payment collected.";
+    await refreshFinanceLedger();
+   }catch(err){$("finance-draft-message").textContent=err.message;btn.disabled=false;}
+  }));
  }catch(e){root.textContent="Cannot load finance records: "+e.message;}
 }
 async function submitDraftContract(e){
@@ -181,6 +190,24 @@ async function submitDraftContract(e){
   msg.textContent=r.notice+" Reference: "+r.contract.id;await refreshFinanceLedger();
  }catch(err){msg.textContent=err.message;}
 }
+
+async function submitVerifiedPayment(e){
+ e.preventDefault();
+ const message=$("finance-draft-message"),button=e.currentTarget.querySelector('button[type="submit"]');
+ if(!$("manual-payment-confirm").checked)return;
+ button.disabled=true;message.textContent="Recording independently verified bank receipt…";
+ try{
+  const data=await fetchJSON("/api/ops/invoices/"+encodeURIComponent($("manual-payment-invoice").value.trim())+"/manual-payment",{
+   method:"POST",headers:{"Content-Type":"application/json"},
+   body:JSON.stringify({bankReference:$("manual-payment-reference").value.trim(),amountZar:Number($("manual-payment-amount").value),confirmVerified:true})
+  });
+  message.textContent=data.notice;
+  if(!data.duplicate)$("manual-payment-form").reset();
+  await refreshFinanceLedger();
+ }catch(err){message.textContent="Payment not recorded: "+err.message;}
+ finally{button.disabled=false;}
+}
+
 async function submitDraftInvoice(e){
  e.preventDefault();
  const msg=$("finance-draft-message");msg.textContent="Creating invoice draft…";
@@ -448,6 +475,7 @@ document.addEventListener("DOMContentLoaded",async()=>{
  $("membership-form").addEventListener("submit",grantMembership);
  $("contract-draft-form").addEventListener("submit",submitDraftContract);
  $("invoice-draft-form").addEventListener("submit",submitDraftInvoice);
+ $("manual-payment-form").addEventListener("submit",submitVerifiedPayment);
  $("demo-booking-form").addEventListener("submit",sendDemoBooking);
  $("toggle-password").addEventListener("click",()=>{const input=$("signin-password");const visible=input.type==="password";input.type=visible?"text":"password";$("toggle-password").textContent=visible?"Hide":"Show";});
  document.querySelectorAll("[data-demo-email]").forEach(b=>b.addEventListener("click",()=>{
