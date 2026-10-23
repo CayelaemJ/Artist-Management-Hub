@@ -277,7 +277,7 @@ async function loadNotifications(){
  try{
   const d=await fetchJSON("/api/ops/notifications");
   root.innerHTML='<h3>Queued notices ('+d.notifications.length+')</h3>'+ (d.notifications.map(n=>'<article class="enquiry-item"><p>'+esc(n.subject)+' · '+esc(n.channel)+' · '+esc(n.state)+'</p><small>'+prettyDate(n.created_at)+(n.channel==='email'?' · Attempts: '+esc(n.attempts||0)+(n.state==='sent'?' · Provider accepted (not confirmed delivered)':n.next_attempt_at?' · Next attempt: '+esc(n.next_attempt_at):''):'')+'</small></article>').join("")||'<p>No notifications in queue.</p>');
-  $("notification-email-message").textContent=d.deliveryProviderConfigured?"Email provider configured. Dispatch reports acceptance, not inbox receipt.":"Email delivery disabled — configure RESEND_API_KEY and VERIFIED sender in Render.";
+  $("notification-email-provider-status").textContent=d.deliveryProviderConfigured?"Email provider configured. Dispatch reports acceptance, not inbox receipt.":"Email delivery disabled — configure RESEND_API_KEY and verified sender in Render.";
  }catch(e){root.textContent="Notifications unavailable: "+e.message;}
 }
 
