@@ -123,7 +123,7 @@ async function changeBooking(req,res,id){
  const client=await pool.connect();
  try{
   await client.query("BEGIN");
-  const x=await client.query("SELECT id,artist_id,event_date,status FROM booking_enquiries WHERE id=$1 FOR UPDATE",[id]);
+  const x=await client.query("SELECT id,artist_id,event_date,status,customer_account_id FROM booking_enquiries WHERE id=$1 FOR UPDATE",[id]);
   if(!x.rowCount){await client.query("ROLLBACK");return fail(res,404,"Enquiry not found");}
   const cur=x.rows[0];
   if(!(transitions[cur.status]||[]).includes(next)){await client.query("ROLLBACK");return fail(res,409,"Invalid booking status transition");}
@@ -134,6 +134,7 @@ async function changeBooking(req,res,id){
   }
   await client.query("UPDATE booking_enquiries SET status=$1,updated_at=now() WHERE id=$2",[next,id]);
   await client.query("INSERT INTO booking_audit(enquiry_id,from_status,to_status) VALUES($1,$2,$3)",[id,cur.status,next]);
+  if(cur.customer_account_id)await client.query("INSERT INTO hub_notifications(account_id,booking_id,channel,subject,body,state) VALUES($1,$2,'in_app','Booking status updated',$3,'pending')",[cur.customer_account_id,id,"Your CABO booking enquiry has moved to "+next.replaceAll("_"," ")+". Reference: "+id]);
   await client.query("COMMIT");
   json(res,200,{reference:id,status:next});
  }catch(e){await client.query("ROLLBACK");throw e;}finally{client.release();}
@@ -455,9 +456,9 @@ async function queueBookingNotification(req,res){
  let b;try{b=await body(req);}catch(e){return fail(res,400,e.message);}
  const id=text(b.bookingId,60),subject=text(b.subject,160),message=text(b.message,1600);
  if(!/^[0-9a-f-]{36}$/i.test(id)||subject.length<4||message.length<10)return fail(res,400,"Valid booking, subject and message required");
- const result=await pool.query("INSERT INTO hub_notifications(booking_id,channel,subject,body,state) SELECT id,'in_app',$2,$3,'pending' FROM booking_enquiries WHERE id=$1 RETURNING id,state,created_at",[id,subject,message]);
- if(!result.rowCount)return fail(res,404,"Booking not found");
- return json(res,201,{notification:result.rows[0],notice:"Internal notification queued; no email or SMS has been sent."});
+ const result=await pool.query("INSERT INTO hub_notifications(account_id,booking_id,channel,subject,body,state) SELECT customer_account_id,id,'in_app',$2,$3,'pending' FROM booking_enquiries WHERE id=$1 AND customer_account_id IS NOT NULL RETURNING id,state,created_at",[id,subject,message]);
+ if(!result.rowCount)return fail(res,404,"Booking not found or not linked to a verified customer account");
+ return json(res,201,{notification:result.rows[0],notice:"In-app notification added to the customer's account. No email or SMS has been sent."});
 }
 
 
@@ -675,6 +676,23 @@ async function acceptYocoWebhook(req,res){
  }catch(err){await client.query("ROLLBACK");throw err;}finally{client.release();}
 }
 
+
+async function accountNotifications(req,res){
+ const account=await accountSession(req);
+ if(!account)return fail(res,401,"Verified sign-in required");
+ const r=await pool.query("SELECT id,booking_id,subject,body,created_at,read_at FROM hub_notifications WHERE account_id=$1 AND channel='in_app' ORDER BY created_at DESC LIMIT 50",[account.id]);
+ return json(res,200,{notifications:r.rows});
+}
+async function readAccountNotification(req,res,id){
+ const account=await accountSession(req);
+ if(!account)return fail(res,401,"Verified sign-in required");
+ if(!validOrigin(req))return fail(res,403,"Origin not allowed");
+ if(!/^[a-f0-9-]{36}$/i.test(id))return fail(res,400,"Invalid notification reference");
+ const r=await pool.query("UPDATE hub_notifications SET read_at=COALESCE(read_at,now()) WHERE id=$1 AND account_id=$2 AND channel='in_app' RETURNING id,read_at",[id,account.id]);
+ if(!r.rowCount)return fail(res,404,"Notification not found");
+ return json(res,200,{notification:r.rows[0]});
+}
+
 const server=http.createServer(async(req,res)=>{
  try{
   const url=new URL(req.url||"/","http://localhost");
@@ -697,6 +715,8 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==="GET"&&url.pathname==="/api/accounts/artists")return myArtistAccess(req,res);
   if(req.method==="GET"&&url.pathname.startsWith("/api/accounts/artist-dashboard/"))return accountArtistDashboard(req,res,decodeURIComponent(url.pathname.slice("/api/accounts/artist-dashboard/".length)));
   if(req.method==="GET"&&url.pathname==="/api/accounts/bookings")return accountCustomerBookings(req,res);
+  if(req.method==="GET"&&url.pathname==="/api/accounts/notifications")return accountNotifications(req,res);
+  if(req.method==="POST"&&/^\/api\/accounts\/notifications\/[a-f0-9-]{36}\/read$/i.test(url.pathname))return readAccountNotification(req,res,url.pathname.split("/")[4]);
   if(req.method==="GET"&&url.pathname==="/api/ops/summary")return opsSummary(req,res);
   if(req.method==="POST"&&url.pathname==="/api/ops/check")return recordOperationalCheck(req,res);
   if(req.method==="GET"&&url.pathname==="/api/ops/history")return operationalHistory(req,res);
