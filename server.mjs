@@ -385,6 +385,29 @@ async function grantArtistMembership(req,res){
  return json(res,200,{membership:q.rows[0],notice:"Artist membership approved by superadmin."});
 }
 
+
+async function accountArtistDashboard(req,res,slug){
+ const account=await accountSession(req);
+ if(!account)return fail(res,401,"Account sign-in required");
+ const access=await pool.query("SELECT m.access_role,a.id,a.slug,a.stage_name,a.genre,a.city,a.pr_factors,a.health_factors FROM artist_account_memberships m JOIN artists a ON a.id=m.artist_id WHERE m.account_id=$1 AND a.slug=$2 AND m.access_role IN ('viewer','editor','owner')",[account.id,slug]);
+ if(!access.rowCount)return fail(res,403,"You do not have access to this artist");
+ const a=access.rows[0];
+ const [gigs,mentions,booking]=await Promise.all([
+  pool.query("SELECT event_date,event_name,fee_zar,expense_zar,status,synthetic FROM gigs WHERE artist_id=$1 ORDER BY event_date DESC LIMIT 50",[a.id]),
+  pool.query("SELECT platform,topic,sentiment,occurred_on,synthetic FROM social_mentions WHERE artist_id=$1 ORDER BY occurred_on DESC LIMIT 30",[a.id]),
+  pool.query("SELECT id,event_type,event_date,venue,status,budget_zar,synthetic FROM booking_enquiries WHERE artist_id=$1 ORDER BY created_at DESC LIMIT 50",[a.id])
+ ]);
+ return json(res,200,{accessRole:a.access_role,artist:{slug:a.slug,name:a.stage_name,genre:a.genre,city:a.city},pr:{score:weightedScore(a.pr_factors,PR_WEIGHTS),factors:a.pr_factors,synthetic:true},career:{score:weightedScore(a.health_factors,HEALTH_WEIGHTS),factors:a.health_factors,synthetic:true},gigs:gigs.rows,mentions:mentions.rows,bookings:booking.rows});
+}
+async function accountCustomerBookings(req,res){
+ const a=await accountSession(req);
+ if(!a)return fail(res,401,"Account sign-in required");
+ if(a.role!=="customer")return fail(res,403,"Customer account required");
+ const r=await pool.query("SELECT b.id,b.event_type,b.event_date,b.venue,b.status,b.created_at,artist.stage_name FROM booking_enquiries b JOIN artists artist ON artist.id=b.artist_id WHERE lower(b.contact_email)=$1 ORDER BY b.created_at DESC LIMIT 100",[a.email]);
+ // Historical enquiries are not exposed by email alone: require an ownership proof workflow.
+ return json(res,200,{bookings:[],verificationRequired:true,message:"Booking ownership must be verified before historical enquiries can be linked to your account."});
+}
+
 const server=http.createServer(async(req,res)=>{
  try{
   const url=new URL(req.url||"/","http://localhost");
@@ -403,6 +426,8 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==="GET"&&url.pathname==="/api/accounts/me")return accountMe(req,res);
   if(req.method==="POST"&&url.pathname==="/api/accounts/logout")return accountLogout(req,res);
   if(req.method==="GET"&&url.pathname==="/api/accounts/artists")return myArtistAccess(req,res);
+  if(req.method==="GET"&&url.pathname.startsWith("/api/accounts/artist-dashboard/"))return accountArtistDashboard(req,res,decodeURIComponent(url.pathname.slice("/api/accounts/artist-dashboard/".length)));
+  if(req.method==="GET"&&url.pathname==="/api/accounts/bookings")return accountCustomerBookings(req,res);
   if(req.method==="GET"&&url.pathname==="/api/ops/summary")return opsSummary(req,res);
   if(req.method==="GET"&&url.pathname==="/api/ops/accounts")return pendingAccounts(req,res);
   if(req.method==="POST"&&url.pathname==="/api/ops/memberships")return grantArtistMembership(req,res);
