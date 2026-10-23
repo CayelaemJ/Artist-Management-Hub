@@ -173,8 +173,22 @@ async function refreshFinanceLedger(){
  try{
   const d=await fetchJSON("/api/ops/finance");
   root.innerHTML='<h3>Contract drafts ('+d.contracts.length+')</h3>'+d.contracts.map(c=>'<p>'+esc(c.title)+' · '+esc(c.status)+' · booking '+esc(c.booking_id)+'</p>').join("")+
-  '<h3>Invoices ('+d.invoices.length+')</h3>'+d.invoices.map(i=>'<article class="enquiry-item"><p>'+esc(i.invoice_number)+' · '+esc(i.status)+' · '+money(Number(i.amount_cents)/100)+' · paid '+money(Number(i.paid_cents)/100)+'</p><small>Reference: '+esc(i.id)+'</small> '+(i.status==='draft'?'<button class="outline-button" type="button" data-issue-invoice="'+esc(i.id)+'">Issue invoice ↗</button>':'')+'</article>').join("")+
+  '<h3>Invoices ('+d.invoices.length+')</h3>'+d.invoices.map(i=>'<article class="enquiry-item"><p>'+esc(i.invoice_number)+' · '+esc(i.status)+' · '+money(Number(i.amount_cents)/100)+' · paid '+money(Number(i.paid_cents)/100)+'</p><small>Reference: '+esc(i.id)+'</small> '+(i.status==='draft'?'<button class="outline-button" type="button" data-issue-invoice="'+esc(i.id)+'">Issue invoice ↗</button>':d.yocoReady&&["issued","partially_paid"].includes(i.status)?'<button class="outline-button" type="button" data-yoco-invoice="'+esc(i.id)+'">Create '+esc(d.yocoMode)+' Yoco checkout ↗</button>':'')+'</article>').join("")+
   '<p class="form-note">No payments or signatures are implied by draft documents.</p>';
+  $("yoco-payment-status").textContent=d.yocoReady?"Yoco "+d.yocoMode+" checkout configured; payments only apply after signed webhooks.":"Yoco checkout disabled until merchant credentials and webhook signing secret are configured.";
+  root.querySelectorAll("[data-yoco-invoice]").forEach(btn=>btn.addEventListener("click",async()=>{
+   if(!confirm("Create a Yoco "+d.yocoMode+" checkout for the outstanding invoice balance?"))return;
+   btn.disabled=true;
+   const status=$("yoco-payment-status");status.textContent="Creating hosted Yoco checkout…";
+   try{
+    const data=await fetchJSON("/api/ops/invoices/"+encodeURIComponent(btn.dataset.yocoInvoice)+"/yoco-checkout",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({confirm:true})});
+    const url=new URL(data.url);
+    if(url.protocol!=="https:"||!(url.hostname==="c.yoco.com"||url.hostname.endsWith(".yoco.com")))throw Error("Provider redirect did not pass safety check");
+    status.textContent=data.notice+" ";
+    const a=document.createElement("a");a.href=url.href;a.target="_blank";a.rel="noopener noreferrer";a.textContent="Open hosted Yoco checkout ↗";status.append(a);
+   }catch(e){status.textContent=e.message;}
+   finally{btn.disabled=false;}
+  }));
   root.querySelectorAll("[data-issue-invoice]").forEach(btn=>btn.addEventListener("click",async()=>{
    if(!confirm("Issue this invoice? This does not email the customer or collect payment."))return;
    btn.disabled=true;
