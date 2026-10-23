@@ -45,6 +45,14 @@ test("HTTP end-to-end: health, PR dashboard, demo sign-in and cross-role authori
   assert.equal((await fetch(base+"/api/demo-bookings",{headers:{Cookie:cookie}})).status,200);
   const invalid=await fetch(base+"/api/accounts/register",{method:"POST",headers:{"Content-Type":"application/json","Origin":base},body:JSON.stringify({email:"qa.invalid@cabo.test",name:"QA Person",role:"customer",password:"12345"})});
   assert.equal(invalid.status,400,"Weak production passwords must fail");
+  const unknown=await fetch(base+"/api/accounts/request-password-reset",{method:"POST",headers:{"Content-Type":"application/json","Origin":base},body:JSON.stringify({email:"unknown-recovery-qa@cabo.test"})});
+  assert.equal(unknown.status,200);
+  assert.match((await unknown.json()).message,/if an eligible account exists/i,"Recovery requests must not expose whether an email is registered");
+  const badReset=await fetch(base+"/api/accounts/reset-password",{method:"POST",headers:{"Content-Type":"application/json","Origin":base},body:JSON.stringify({token:"not-a-valid-token",password:"Strong-New-Passphrase-2026"})});
+  assert.equal(badReset.status,400);
+  const weakReset=await fetch(base+"/api/accounts/reset-password",{method:"POST",headers:{"Content-Type":"application/json","Origin":base},body:JSON.stringify({token:"a".repeat(64),password:"12345"})});
+  assert.equal(weakReset.status,400);
+
  }finally{
   child.kill("SIGTERM");
   if(child.exitCode===null)await new Promise(resolve=>{child.once("exit",resolve);setTimeout(resolve,2000);});
