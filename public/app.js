@@ -190,6 +190,21 @@ async function submitDraftInvoice(e){
  }catch(err){msg.textContent=err.message;}
 }
 
+
+async function loadPendingAccounts(){
+ const root=$("pending-accounts");
+ try{
+  const d=await fetchJSON("/api/ops/accounts");
+  root.innerHTML=d.accounts.map(a=>'<article class="enquiry-item"><h3>'+esc(a.display_name)+'</h3><p>'+esc(a.email)+' · '+esc(a.role)+'</p><p>'+ (a.verified_at?'APPROVED':'PENDING VERIFICATION')+'</p>'+(!a.verified_at?'<button class="outline-button" data-approve-account="'+esc(a.id)+'" type="button">Approve after independent verification ↗</button>':'')+'</article>').join("")||'<p class="loading">No registered accounts.</p>';
+  root.querySelectorAll("[data-approve-account]").forEach(btn=>btn.addEventListener("click",async()=>{
+   if(!confirm("Confirm that you independently verified identity and email ownership for this account?"))return;
+   btn.disabled=true;
+   try{await fetchJSON("/api/ops/accounts/"+encodeURIComponent(btn.dataset.approveAccount)+"/approve",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({confirm:true})});await loadPendingAccounts();}
+   catch(err){$("operations-message").textContent=err.message;btn.disabled=false;}
+  }));
+ }catch(err){root.textContent="Accounts require superadmin access: "+err.message;}
+}
+
 async function loadOperations(){
  const status=$("operations-message");status.textContent="Fetching operational counts from Neon…";
  try{
@@ -198,6 +213,7 @@ async function loadOperations(){
   $("operations-content").innerHTML=rows.map(x=>kpi(x[0].toUpperCase(),String(x[1]),"LIVE NEON RECORDS")).join("");
   status.textContent="Provider status: payments not configured; social integrations require consent and API credentials; backup restore testing remains unverified.";
   await refreshFinanceLedger();
+  await loadPendingAccounts();
  }catch(e){status.textContent="Superadmin access required: "+e.message;$("operations-content").innerHTML="";}
 }
 async function registerRealAccount(e){
