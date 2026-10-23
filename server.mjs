@@ -4,6 +4,7 @@ import path from "node:path";
 import {fileURLToPath} from "node:url";
 import crypto from "node:crypto";
 import pg from "pg";
+import {hashPassword,verifyPassword,tokenHash,issueToken,accountCookie,clearAccountCookie,extractAccountCookie} from "./lib/account-auth.mjs";
 import {credentialConfigured,authenticate,superadminUser,superadminStart,superadminEnd,adminCookie,clearAdminCookie} from "./lib/superadmin-auth.mjs";
 import {DEMO_ENABLED,findDemoUser,loginAttemptAllowed,newSession,sessionUser,endSession,sessionCookie,clearSessionCookie,demoWorkspace} from "./lib/demo-auth.mjs";
 import {weightedScore,PR_WEIGHTS,HEALTH_WEIGHTS,financialTotals} from "./lib/metrics.mjs";
@@ -272,6 +273,58 @@ function adminLogout(req,res){
  return json(res,200,{authenticated:false});
 }
 
+
+async function accountSession(req){
+ const token=extractAccountCookie(req);if(!token||!pool)return null;
+ const r=await pool.query("SELECT a.id,a.email,a.display_name,a.role,a.verified_at FROM hub_sessions s JOIN hub_accounts a ON a.id=s.account_id WHERE s.token_hash=$1 AND s.expires_at>now() AND a.disabled_at IS NULL",[tokenHash(token)]);
+ return r.rows[0]||null;
+}
+async function accountRegister(req,res){
+ if(!validOrigin(req))return fail(res,403,"Origin not allowed");
+ if(!rateLimit(req,"register",4,3600000))return fail(res,429,"Too many registrations");
+ let b;try{b=await body(req);}catch(e){return fail(res,400,e.message);}
+ const email=text(b.email,254).toLowerCase(),name=text(b.name,120),role=text(b.role,30);
+ if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)||name.length<2||!["customer","artist"].includes(role))return fail(res,400,"Valid name, email and role required");
+ let pass;try{pass=hashPassword(b.password);}catch(e){return fail(res,400,e.message);}
+ try{
+  const r=await pool.query("INSERT INTO hub_accounts(email,password_hash,display_name,role) VALUES($1,$2,$3,$4) RETURNING id,email,display_name,role",[email,pass,name,role]);
+  return json(res,201,{account:r.rows[0],message:"Account created. Verification and artist ownership approval are required before access to private artist records."});
+ }catch(e){if(e.code==="23505")return fail(res,409,"Account already exists");throw e;}
+}
+async function accountLogin(req,res){
+ if(!validOrigin(req))return fail(res,403,"Origin not allowed");
+ if(!rateLimit(req,"account-login",6,900000))return fail(res,429,"Too many attempts");
+ let b;try{b=await body(req);}catch(e){return fail(res,400,e.message);}
+ const email=text(b.email,254).toLowerCase();
+ const r=await pool.query("SELECT id,email,password_hash,display_name,role,verified_at FROM hub_accounts WHERE email=$1 AND disabled_at IS NULL",[email]);
+ // Deliberately do not issue sessions to unverified accounts.
+ if(!r.rowCount||!verifyPassword(b.password,r.rows[0].password_hash))return fail(res,401,"Invalid credentials");
+ const a=r.rows[0];if(!a.verified_at)return fail(res,403,"Email verification is required before account access");
+ const t=issueToken();
+ await pool.query("INSERT INTO hub_sessions(token_hash,account_id,expires_at) VALUES($1,$2,now()+interval '12 hours')",[tokenHash(t),a.id]);
+ res.setHeader("Set-Cookie",accountCookie(t));
+ return json(res,200,{authenticated:true,account:{id:a.id,email:a.email,name:a.display_name,role:a.role}});
+}
+async function accountMe(req,res){
+ const a=await accountSession(req);if(!a)return fail(res,401,"Account sign-in required");
+ return json(res,200,{account:{id:a.id,email:a.email,name:a.display_name,role:a.role}});
+}
+async function accountLogout(req,res){
+ if(!validOrigin(req))return fail(res,403,"Origin not allowed");
+ const t=extractAccountCookie(req);if(t)await pool.query("DELETE FROM hub_sessions WHERE token_hash=$1",[tokenHash(t)]);
+ res.setHeader("Set-Cookie",clearAccountCookie());return json(res,200,{authenticated:false});
+}
+async function myArtistAccess(req,res){
+ const a=await accountSession(req);if(!a)return fail(res,401,"Account sign-in required");
+ const r=await pool.query("SELECT ar.artist_id, ar.access_role, a.stage_name,a.slug FROM artist_account_memberships ar JOIN artists a ON a.id=ar.artist_id WHERE ar.account_id=$1 ORDER BY a.stage_name",[a.id]);
+ return json(res,200,{memberships:r.rows,accountRole:a.role});
+}
+async function opsSummary(req,res){
+ if(!superadminUser(req))return fail(res,403,"Superadmin only");
+ const counts=await pool.query("SELECT (SELECT count(*) FROM hub_accounts)::int AS accounts,(SELECT count(*) FROM booking_enquiries)::int AS enquiries,(SELECT count(*) FROM booking_contracts)::int AS contracts,(SELECT count(*) FROM booking_invoices)::int AS invoices,(SELECT count(*) FROM social_provider_connections)::int AS social_connections,(SELECT count(*) FROM hub_notifications WHERE state='pending')::int AS pending_notifications");
+ return json(res,200,{summary:counts.rows[0],payments:"provider_not_configured",social:"provider_consent_required",backup:"restore_drill_not_verified"});
+}
+
 const server=http.createServer(async(req,res)=>{
  try{
   const url=new URL(req.url||"/","http://localhost");
@@ -285,6 +338,13 @@ const server=http.createServer(async(req,res)=>{
    if(url.pathname.startsWith("/api/demo-")&&!rateLimit(req,"demo",90,60_000))return fail(res,429,"Too many demo requests.");
   }
   if(req.method==="POST"&&url.pathname==="/api/superadmin/login")return adminLogin(req,res);
+  if(req.method==="POST"&&url.pathname==="/api/accounts/register")return accountRegister(req,res);
+  if(req.method==="POST"&&url.pathname==="/api/accounts/login")return accountLogin(req,res);
+  if(req.method==="GET"&&url.pathname==="/api/accounts/me")return accountMe(req,res);
+  if(req.method==="POST"&&url.pathname==="/api/accounts/logout")return accountLogout(req,res);
+  if(req.method==="GET"&&url.pathname==="/api/accounts/artists")return myArtistAccess(req,res);
+  if(req.method==="GET"&&url.pathname==="/api/ops/summary")return opsSummary(req,res);
+
   if(req.method==="GET"&&url.pathname==="/api/superadmin/me")return adminSession(req,res);
   if(req.method==="POST"&&url.pathname==="/api/superadmin/logout")return adminLogout(req,res);
   // Preview identities are deliberately independent of real Neon data.
