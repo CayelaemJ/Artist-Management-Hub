@@ -398,7 +398,7 @@ async function askAI(e){
  if(!adminToken&&!superadminActive){answer.textContent="Sign in as superadmin or supply a management token under Booking management first.";return;}
  try{
   const d=await fetchJSON("/api/ai/advice",postJSON("POST",{artistSlug:$("ai-artist").value,question:$("ai-question").value}));
-  answer.textContent=d.answer+"\n\n— AI-generated advice based on synthetic demo data. Review before using.";
+  answer.textContent=d.answer+"\n\n— "+(d.aiGenerated?"Groq AI-generated advice":"Offline rule-based preview (not AI-generated)")+" based only on fictional inputs. Review before use.";
  }catch(err){answer.textContent="AI not available: "+err.message;}
 }
 
