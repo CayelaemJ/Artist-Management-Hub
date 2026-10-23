@@ -11,7 +11,7 @@ test('flags high-confidence model and source-control tokens',()=>{
   assert.ok(matchesSecret('ghp_'+'b'.repeat(36)).includes('GitHub API token'));
 });
 test('flags private key content',()=>{
-  assert.ok(matchesSecret('-----BEGIN PRIVATE KEY-----').includes('Private key material'));
+  assert.ok(matchesSecret('-----BEGIN '+'PRIVATE KEY-----').includes('Private key material'));
 });
 test('ignores placeholders and harmless example files',()=>{
   assert.deepEqual(matchesSecret('GROQ_API_KEY=example-value'),[]);
