@@ -163,6 +163,33 @@ async function loadOverview(){
 
 let superadminActive=false;
 
+
+async function refreshFinanceLedger(){
+ const root=$("finance-ledger");
+ try{
+  const d=await fetchJSON("/api/ops/finance");
+  root.innerHTML='<h3>Contract drafts ('+d.contracts.length+')</h3>'+d.contracts.map(c=>'<p>'+esc(c.title)+' · '+esc(c.status)+' · booking '+esc(c.booking_id)+'</p>').join("")+
+  '<h3>Invoice drafts ('+d.invoices.length+')</h3>'+d.invoices.map(i=>'<p>'+esc(i.invoice_number)+' · '+esc(i.status)+' · '+money(Number(i.amount_cents)/100)+' · paid '+money(Number(i.paid_cents)/100)+'</p>').join("")+
+  '<p class="form-note">No payments or signatures are implied by draft documents.</p>';
+ }catch(e){root.textContent="Cannot load finance records: "+e.message;}
+}
+async function submitDraftContract(e){
+ e.preventDefault();
+ const msg=$("finance-draft-message");msg.textContent="Creating contract draft…";
+ try{
+  const r=await fetchJSON("/api/ops/contracts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({bookingId:$("contract-booking-id").value,title:$("contract-title").value,terms:$("contract-terms").value})});
+  msg.textContent=r.notice+" Reference: "+r.contract.id;await refreshFinanceLedger();
+ }catch(err){msg.textContent=err.message;}
+}
+async function submitDraftInvoice(e){
+ e.preventDefault();
+ const msg=$("finance-draft-message");msg.textContent="Creating invoice draft…";
+ try{
+  const r=await fetchJSON("/api/ops/invoices",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({bookingId:$("invoice-booking-id").value,amountZar:$("invoice-amount").value})});
+  msg.textContent=r.notice+" Reference: "+r.invoice.invoice_number;await refreshFinanceLedger();
+ }catch(err){msg.textContent=err.message;}
+}
+
 async function loadOperations(){
  const status=$("operations-message");status.textContent="Fetching operational counts from Neon…";
  try{
@@ -170,6 +197,7 @@ async function loadOperations(){
   const rows=[["Registered accounts",d.summary.accounts],["Booking enquiries",d.summary.enquiries],["Contracts",d.summary.contracts],["Invoices",d.summary.invoices],["Social connections",d.summary.social_connections],["Pending notifications",d.summary.pending_notifications]];
   $("operations-content").innerHTML=rows.map(x=>kpi(x[0].toUpperCase(),String(x[1]),"LIVE NEON RECORDS")).join("");
   status.textContent="Provider status: payments not configured; social integrations require consent and API credentials; backup restore testing remains unverified.";
+  await refreshFinanceLedger();
  }catch(e){status.textContent="Superadmin access required: "+e.message;$("operations-content").innerHTML="";}
 }
 async function registerRealAccount(e){
@@ -343,6 +371,8 @@ document.addEventListener("DOMContentLoaded",async()=>{
  $("close-real-account").addEventListener("click",()=>$("real-account-dialog").close());
  $("real-account-form").addEventListener("submit",registerRealAccount);
  $("operations-refresh").addEventListener("click",loadOperations);
+ $("contract-draft-form").addEventListener("submit",submitDraftContract);
+ $("invoice-draft-form").addEventListener("submit",submitDraftInvoice);
  $("demo-booking-form").addEventListener("submit",sendDemoBooking);
  $("toggle-password").addEventListener("click",()=>{const input=$("signin-password");const visible=input.type==="password";input.type=visible?"text":"password";$("toggle-password").textContent=visible?"Hide":"Show";});
  document.querySelectorAll("[data-demo-email]").forEach(b=>b.addEventListener("click",()=>{
