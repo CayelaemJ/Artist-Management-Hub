@@ -182,6 +182,7 @@ async function refreshFinanceLedger(){
     const d=await fetchJSON("/api/ops/contracts/"+encodeURIComponent(button.dataset.contractSend)+"/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({confirm:true})});
     $("finance-draft-message").textContent=d.notice;
     await refreshFinanceLedger();
+  await loadManagementAnalytics();
    }catch(e){$("finance-draft-message").textContent=e.message;button.disabled=false;}
   }));
   $("yoco-payment-status").textContent=d.yocoReady?"Yoco "+d.yocoMode+" checkout configured; payments only apply after signed webhooks.":"Yoco checkout disabled until merchant credentials and webhook signing secret are configured.";
@@ -354,6 +355,40 @@ async function loadSocialCoverage(){
    catch(e){$("youtube-status").textContent="Official sync unavailable: "+e.message;btn.disabled=false;}
   }));
  }catch(err){root.textContent="Social coverage requires superadmin access: "+err.message;}
+}
+
+
+async function loadManagementAnalytics(){
+ const status=$("analytics-status"),summary=$("analytics-summary"),breakdown=$("analytics-breakdown");
+ status.textContent="Reading aggregate data from Neon…";
+ try{
+  const d=await fetchJSON("/api/ops/analytics?days="+encodeURIComponent($("analytics-period").value));
+  const enquiries=d.bookings.reduce((n,x)=>n+Number(x.count),0);
+  const demoEnquiries=d.demoBookings.reduce((n,x)=>n+Number(x.count),0);
+  const paid=Number(d.finance.paidCents)/100,issued=Number(d.finance.issuedCents)/100;
+  summary.innerHTML=kpi("CUSTOMER ENQUIRIES",enquiries,"FICTIONAL ARTIST ROSTER")+
+    kpi("SEPARATE DEMO PIPELINE",demoEnquiries,"NOT CUSTOMER BOOKINGS")+
+    kpi("ISSUED INVOICES",money(issued),"LEDGER — NOT CASH RECEIVED")+
+    kpi("RECORDED PAYMENTS",money(paid),"RECONCILIATION REQUIRED");
+  const bookingRows=d.bookings.map(x=>({label:x.status.replaceAll("_"," ")+(x.synthetic?" (test)":" (fictional roster)"),count:x.count}));
+  const demoRows=d.demoBookings.map(x=>({label:x.status.replaceAll("_"," "),count:x.count}));
+  const bars=(items)=>items.length?items.map(x=>{
+    const max=Math.max(1,...items.map(i=>Number(i.count)));
+    const width=Math.round(100*Number(x.count)/max);
+    return '<div class="analytics-bar-row"><span>'+esc(x.label)+'</span><div class="analytics-bar-track"><span style="width:'+width+'%"></span></div><b>'+esc(x.count)+'</b></div>';
+  }).join(""):'<p class="form-note">No records in this period.</p>';
+  const trend=d.weeklyTrend.map(x=>({label:x.week,count:x.count}));
+  const ranks=d.artistScores.map((a,i)=>'<tr><td>'+esc(i+1)+'</td><td>'+esc(a.name)+'</td><td>'+esc(a.prScore)+'/100</td><td>'+esc(a.careerScore)+'/100</td></tr>').join("");
+  breakdown.innerHTML=
+   '<section class="analytics-chart"><h4>Customer enquiry funnel</h4><p class="form-note">Requests received for the fictional artist roster</p>'+bars(bookingRows)+'</section>'+
+   '<section class="analytics-chart"><h4>Self-service demo bookings</h4><p class="form-note">Stored separately from customer enquiries</p>'+bars(demoRows)+'</section>'+
+   '<section class="analytics-chart"><h4>Enquiries by week</h4>'+bars(trend)+'</section>'+
+   '<section class="analytics-chart"><h4>Illustrative artist PR & career scores</h4><div class="analytics-table-wrap"><table class="analytics-score-table"><thead><tr><th>#</th><th>Fictional artist</th><th>PR</th><th>Career</th></tr></thead><tbody>'+ranks+'</tbody></table></div></section>';
+  status.textContent="Aggregated "+d.periodDays+"-day report. "+d.artistScores.length+" fictional artists scored. No customer names or emails included. Updated: "+new Date(d.generatedAt).toLocaleString("en-ZA");
+ }catch(e){
+  summary.innerHTML="";breakdown.innerHTML="";
+  status.textContent="Superadmin analytics unavailable: "+e.message;
+ }
 }
 
 async function loadOperations(){
@@ -718,6 +753,8 @@ document.addEventListener("DOMContentLoaded",async()=>{
  $("password-recovery-complete-form").addEventListener("submit",completePasswordRecovery);
  await handlePasswordRecoveryLink();
  $("operations-refresh").addEventListener("click",loadOperations);
+ $("analytics-refresh").addEventListener("click",loadManagementAnalytics);
+ $("analytics-period").addEventListener("change",loadManagementAnalytics);
  $("operations-run-check").addEventListener("click",runOperationalCheck);
  $("notification-form").addEventListener("submit",queueNotification);
  $("notification-email-form").addEventListener("submit",queueVerifiedEmail);
