@@ -303,6 +303,26 @@ async function loadOperations(){
   await loadOperationalHistory();
  }catch(e){status.textContent="Superadmin access required: "+e.message;$("operations-content").innerHTML="";}
 }
+
+async function handleEmailVerificationLink(){
+ const token=/^#verify=([a-f0-9]{64})$/i.exec(location.hash)?.[1];
+ if(!token)return;
+ history.replaceState(history.state,"",location.pathname+location.search);
+ const banner=$("verification-banner");banner.hidden=false;banner.textContent="Verifying account email…";
+ try{
+  const d=await fetchJSON("/api/accounts/verify-email",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token})});
+  banner.textContent=d.message;
+ }catch(e){banner.textContent="Verification failed: "+e.message;}
+}
+async function resendEmailVerification(){
+ const status=$("real-account-message"),email=$("real-email").value.trim();
+ if(!email){status.textContent="Enter your email address first.";return;}
+ try{
+  const d=await fetchJSON("/api/accounts/resend-verification",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email})});
+  status.textContent=d.message;
+ }catch(e){status.textContent=e.message;}
+}
+
 async function registerRealAccount(e){
  e.preventDefault();const status=$("real-account-message"),button=e.currentTarget.querySelector('button[type="submit"]');
  button.disabled=true;status.textContent="Creating account…";
@@ -524,6 +544,8 @@ document.addEventListener("DOMContentLoaded",async()=>{
  $("open-real-account").addEventListener("click",()=>{$("signin-dialog").close();$("real-account-message").textContent="";$("real-account-dialog").showModal();});
  $("close-real-account").addEventListener("click",()=>$("real-account-dialog").close());
  $("real-account-form").addEventListener("submit",registerRealAccount);
+ $("resend-email-verification").addEventListener("click",resendEmailVerification);
+ await handleEmailVerificationLink();
  $("open-real-login").addEventListener("click",()=>{$("signin-dialog").close();$("real-login-message").textContent="";$("real-login-dialog").showModal();});
  $("close-real-login").addEventListener("click",()=>$("real-login-dialog").close());
  $("real-login-form").addEventListener("submit",realLogin);
