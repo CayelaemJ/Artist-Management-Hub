@@ -608,7 +608,7 @@ async function createYocoCheckout(req,res,id){
  if(!validOrigin(req))return fail(res,403,"Origin not allowed");
  if(!/^[a-f0-9-]{36}$/i.test(id))return fail(res,400,"Invalid invoice ID");
  const secret=process.env.YOCO_SECRET_KEY||"";
- if(process.env.YOCO_ENABLE_CHECKOUT!=="true"||!secret)return fail(res,503,"Yoco is not configured for checkout");
+ if(process.env.YOCO_ENABLE_CHECKOUT!=="true"||!secret||!process.env.YOCO_WEBHOOK_SECRET)return fail(res,503,"Yoco checkout and verified webhook must both be configured");
  const mode=secret.startsWith("sk_test_")?"test":secret.startsWith("sk_live_")?"live":null;
  if(!mode)return fail(res,503,"Invalid Yoco credential mode");
  if(mode==="live"&&process.env.YOCO_ALLOW_LIVE!=="true")return fail(res,403,"Live payments are disabled pending merchant acceptance testing");
