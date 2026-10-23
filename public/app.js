@@ -216,6 +216,23 @@ async function loadPendingAccounts(){
  }catch(err){root.textContent="Accounts require superadmin access: "+err.message;}
 }
 
+
+async function loadOperationalHistory(){
+ const root=$("operations-health-history");
+ try{
+  const d=await fetchJSON("/api/ops/history");
+  root.innerHTML='<h3>Operational health history</h3>'+ (d.history.length?d.history.map(x=>'<p><strong>'+esc(x.check_name)+'</strong> · '+esc(x.outcome.toUpperCase())+' · '+esc(x.details)+' · '+prettyDate(x.checked_at)+'</p>').join(""):'<p>No checks have been recorded yet.</p>');
+ }catch(err){root.textContent="Could not load checks: "+err.message;}
+}
+async function runOperationalCheck(){
+ const status=$("operations-message");status.textContent="Running database and service checks…";
+ try{
+  const r=await fetchJSON("/api/ops/check",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
+  status.textContent="Recorded "+r.checks.length+" operational checks. Warnings indicate missing provider configuration or unverified recovery.";
+  await loadOperationalHistory();
+ }catch(err){status.textContent="Health check failed: "+err.message;}
+}
+
 async function loadOperations(){
  const status=$("operations-message");status.textContent="Fetching operational counts from Neon…";
  try{
@@ -225,6 +242,7 @@ async function loadOperations(){
   status.textContent="Provider status: payments not configured; social integrations require consent and API credentials; backup restore testing remains unverified.";
   await refreshFinanceLedger();
   await loadPendingAccounts();
+  await loadOperationalHistory();
  }catch(e){status.textContent="Superadmin access required: "+e.message;$("operations-content").innerHTML="";}
 }
 async function registerRealAccount(e){
@@ -398,6 +416,7 @@ document.addEventListener("DOMContentLoaded",async()=>{
  $("close-real-account").addEventListener("click",()=>$("real-account-dialog").close());
  $("real-account-form").addEventListener("submit",registerRealAccount);
  $("operations-refresh").addEventListener("click",loadOperations);
+ $("operations-run-check").addEventListener("click",runOperationalCheck);
  $("membership-form").addEventListener("submit",grantMembership);
  $("contract-draft-form").addEventListener("submit",submitDraftContract);
  $("invoice-draft-form").addEventListener("submit",submitDraftInvoice);
