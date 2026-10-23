@@ -172,9 +172,18 @@ async function refreshFinanceLedger(){
  const root=$("finance-ledger");
  try{
   const d=await fetchJSON("/api/ops/finance");
-  root.innerHTML='<h3>Contract drafts ('+d.contracts.length+')</h3>'+d.contracts.map(c=>'<p>'+esc(c.title)+' · '+esc(c.status)+' · booking '+esc(c.booking_id)+'</p>').join("")+
+  root.innerHTML='<h3>Contracts ('+d.contracts.length+')</h3>'+d.contracts.map(c=>'<article class="enquiry-item"><p>'+esc(c.title)+' · '+esc(c.status)+' · booking '+esc(c.booking_id)+'</p>'+(c.status==='draft'?'<button type="button" class="outline-button" data-contract-send="'+esc(c.id)+'">Send to verified customer ↗</button>':'')+(c.accepted_at?'<small>Acknowledged by '+esc(c.signer_name)+' at '+esc(c.accepted_at)+'</small>':'')+'</article>').join("")+
   '<h3>Invoices ('+d.invoices.length+')</h3>'+d.invoices.map(i=>'<article class="enquiry-item"><p>'+esc(i.invoice_number)+' · '+esc(i.status)+' · '+money(Number(i.amount_cents)/100)+' · paid '+money(Number(i.paid_cents)/100)+'</p><small>Reference: '+esc(i.id)+'</small> '+(i.status==='draft'?'<button class="outline-button" type="button" data-issue-invoice="'+esc(i.id)+'">Issue invoice ↗</button>':d.yocoReady&&["issued","partially_paid"].includes(i.status)?'<button class="outline-button" type="button" data-yoco-invoice="'+esc(i.id)+'">Create '+esc(d.yocoMode)+' Yoco checkout ↗</button>':'')+'</article>').join("")+
   '<p class="form-note">No payments or signatures are implied by draft documents.</p>';
+  root.querySelectorAll("[data-contract-send]").forEach(button=>button.addEventListener("click",async()=>{
+   if(!confirm("Publish this contract for review by its linked verified customer? No email or signature will be sent."))return;
+   button.disabled=true;
+   try{
+    const d=await fetchJSON("/api/ops/contracts/"+encodeURIComponent(button.dataset.contractSend)+"/send",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({confirm:true})});
+    $("finance-draft-message").textContent=d.notice;
+    await refreshFinanceLedger();
+   }catch(e){$("finance-draft-message").textContent=e.message;button.disabled=false;}
+  }));
   $("yoco-payment-status").textContent=d.yocoReady?"Yoco "+d.yocoMode+" checkout configured; payments only apply after signed webhooks.":"Yoco checkout disabled until merchant credentials and webhook signing secret are configured.";
   root.querySelectorAll("[data-yoco-invoice]").forEach(btn=>btn.addEventListener("click",async()=>{
    if(!confirm("Create a Yoco "+d.yocoMode+" checkout for the outstanding invoice balance?"))return;
@@ -492,6 +501,31 @@ async function loadVerifiedNotifications(){
  }catch(err){root.textContent="Notifications unavailable: "+err.message;}
 }
 
+
+async function renderCustomerContracts(area){
+ const section=document.createElement("section");section.id="verified-contracts";section.className="dash-card";
+ area.append(section);
+ try{
+  const d=await fetchJSON("/api/accounts/contracts");
+  section.innerHTML='<h3>Your contracts ('+d.contracts.length+')</h3>'+(
+   d.contracts.map(c=>{
+    const details='<article class="enquiry-item"><h4>'+esc(c.title)+'</h4><p>Status: '+esc(c.status)+' · Booking: '+esc(c.booking_id)+'</p>'+
+      '<div class="contract-terms">'+esc(c.terms)+'</div>'+
+      '<p class="form-note">'+(c.demoOnly?'DEMONSTRATION ONLY — fictional artist, no real booking.':'CABO stores your electronic acknowledgement; no third-party identity verification or qualified digital signature is provided.')+'</p>';
+    const action=c.status==='sent'?'<form class="contract-ack" data-contract-ack="'+esc(c.id)+'" data-terms-hash="'+esc(c.termsHash)+'"><label>Type your full name<input name="signerName" autocomplete="name" maxlength="120" required value="'+esc(realAccount.name)+'"></label><label><input name="acceptTerms" type="checkbox" required> I have read the exact displayed terms and agree to record my acknowledgement.</label><button type="submit" class="primary-button">Acknowledge these terms ↗</button></form>':'<p>Acknowledged by '+esc(c.signer_name||"customer")+(c.accepted_at?' · '+prettyDate(c.accepted_at):'')+'</p>';
+    return details+action+'</article>';
+   }).join("")||'<p>No contracts have been sent to this verified account.</p>');
+  section.querySelectorAll("[data-contract-ack]").forEach(form=>form.addEventListener("submit",async e=>{
+   e.preventDefault();const btn=form.querySelector("button"),id=form.dataset.contractAck;btn.disabled=true;
+   try{
+    const data=await fetchJSON("/api/accounts/contracts/"+encodeURIComponent(id)+"/accept",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({signerName:form.elements.namedItem("signerName").value,termsHash:form.dataset.termsHash,acceptTerms:form.elements.namedItem("acceptTerms").checked})});
+    await renderVerifiedWorkspace($("demo-workspace-content"));
+    const note=$("verified-contracts");if(note)note.insertAdjacentHTML("afterbegin",'<p class="message">'+esc(data.notice)+'</p>');
+   }catch(err){form.insertAdjacentHTML("beforeend",'<p class="message">'+esc(err.message)+'</p>');btn.disabled=false;}
+  }));
+ }catch(err){section.textContent="Contracts unavailable: "+err.message;}
+}
+
 async function renderVerifiedWorkspace(root){
  if(!realAccount)return;
  root.innerHTML='<div class="demo-welcome"><span class="eyebrow">VERIFIED ACCOUNT / '+esc(realAccount.role.toUpperCase())+'</span><h3>'+esc(realAccount.name)+'</h3><p>'+esc(realAccount.email)+' · These are your permission-scoped records, not demonstration data.</p></div><section class="demo-tasks" id="verified-account-data"><p class="loading">Loading access-scoped records…</p></section><section class="demo-tasks" id="verified-notifications"><p class="loading">Loading messages…</p></section>';
@@ -501,6 +535,7 @@ async function renderVerifiedWorkspace(root){
    const d=await fetchJSON("/api/accounts/bookings");
    area.innerHTML='<h3>Your booking enquiries ('+d.bookings.length+')</h3>'+d.bookings.map(b=>'<article class="enquiry-item"><strong>'+esc(b.stage_name)+'</strong><p>'+esc(b.event_type)+' · '+prettyDate(b.event_date)+' · '+esc(b.venue)+'</p><p>Status: '+esc(b.status)+' · Reference: '+esc(b.id)+'</p></article>').join("")+
      '<p class="form-note">Only bookings submitted while signed in to this verified customer account appear here. Guest requests require separate ownership verification.</p>';
+   await renderCustomerContracts(area);
   }else if(realAccount.role==="artist"){
    const d=await fetchJSON("/api/accounts/artists");
    area.innerHTML='<h3>Your permitted artists</h3>'+ (d.memberships.map(m=>'<article class="enquiry-item"><strong>'+esc(m.stage_name)+'</strong> · '+esc(m.access_role)+'<button type="button" class="outline-button" data-owned-artist="'+esc(m.slug)+'">View my artist dashboard ↗</button></article>').join("")||'<p>No artist assigned yet. Ask CABO management to approve a specific artist membership.</p>')+'<div id="verified-artist-dashboard"></div>';
