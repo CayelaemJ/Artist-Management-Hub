@@ -463,6 +463,51 @@ async function socialReadiness(req,res){
  return json(res,200,{connections:connections.rows,platforms:metrics.rows,liveDataAvailable:connections.rowCount>0,notice:"Only approved, consented official API connections count as live. Synthetic sentiment inputs are not live analytics."});
 }
 
+
+async function issueInvoice(req,res,id){
+ if(!superadminUser(req))return fail(res,403,"Superadmin required");
+ if(!validOrigin(req))return fail(res,403,"Origin not allowed");
+ if(!/^[a-f0-9-]{36}$/i.test(id))return fail(res,400,"Invalid invoice reference");
+ let b;try{b=await body(req);}catch(e){return fail(res,400,e.message);}
+ if(b.confirm!==true)return fail(res,400,"Explicit issue confirmation required");
+ const r=await pool.query("UPDATE booking_invoices SET status='issued',issued_at=now() WHERE id=$1 AND status='draft' RETURNING id,invoice_number,status,issued_at",[id]);
+ if(!r.rowCount)return fail(res,409,"Invoice not found or no longer a draft");
+ return json(res,200,{invoice:r.rows[0],notice:"Invoice issued in CABO records; no email delivered and no payment collected."});
+}
+async function manuallyRecordVerifiedPayment(req,res,id){
+ if(!superadminUser(req))return fail(res,403,"Superadmin required");
+ if(!validOrigin(req))return fail(res,403,"Origin not allowed");
+ if(!/^[a-f0-9-]{36}$/i.test(id))return fail(res,400,"Invalid invoice reference");
+ let b;try{b=await body(req);}catch(e){return fail(res,400,e.message);}
+ const reference=text(b.bankReference,120),amount=Number(b.amountZar);
+ if(b.confirmVerified!==true||reference.length<6||!Number.isSafeInteger(Math.round(amount*100))||amount<=0||Math.round(amount*100)/100!==amount||amount>100000000)
+  return fail(res,400,"Enter a verified bank reference, positive amount and explicit confirmation");
+ const cents=Math.round(amount*100);
+ const client=await pool.connect();
+ try{
+  await client.query("BEGIN");
+  const r=await client.query("SELECT id,amount_cents,paid_cents,status FROM booking_invoices WHERE id=$1 FOR UPDATE",[id]);
+  if(!r.rowCount){await client.query("ROLLBACK");return fail(res,404,"Invoice not found");}
+  const invoice=r.rows[0];
+  const duplicate=await client.query("SELECT id,invoice_id,amount_cents FROM invoice_payment_events WHERE provider='verified_manual_bank_transfer' AND provider_event_id=$1",[reference]);
+  if(duplicate.rowCount){
+   await client.query("ROLLBACK");
+   if(duplicate.rows[0].invoice_id===id&&Number(duplicate.rows[0].amount_cents)===cents)
+     return json(res,200,{duplicate:true,invoiceId:id,notice:"Previously recorded bank reference; no duplicate credit applied."});
+   return fail(res,409,"Bank transfer reference already recorded against another payment");
+  }
+  if(!["issued","partially_paid"].includes(invoice.status)){await client.query("ROLLBACK");return fail(res,409,"Invoice must be issued before recording a verified payment");}
+  const balance=Number(invoice.amount_cents)-Number(invoice.paid_cents);
+  if(cents>balance){await client.query("ROLLBACK");return fail(res,409,"Payment exceeds outstanding balance");}
+  await client.query("INSERT INTO invoice_payment_events(invoice_id,provider,provider_event_id,amount_cents) VALUES($1,'verified_manual_bank_transfer',$2,$3)",[id,reference,cents]);
+  const total=Number(invoice.paid_cents)+cents;
+  const next=total===Number(invoice.amount_cents)?"paid":"partially_paid";
+  await client.query("UPDATE booking_invoices SET paid_cents=$1,status=$2 WHERE id=$3",[total,next,id]);
+  await client.query("COMMIT");
+  return json(res,200,{invoiceId:id,paidCents:total,status:next,notice:"Superadmin recorded manually verified bank receipt; no gateway transaction occurred."});
+ }catch(e){await client.query("ROLLBACK");if(e.code==="23505")return fail(res,409,"Payment reference already recorded");throw e;}finally{client.release();}
+}
+
 const server=http.createServer(async(req,res)=>{
  try{
   const url=new URL(req.url||"/","http://localhost");
@@ -495,6 +540,8 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==="GET"&&url.pathname==="/api/ops/finance")return financeWorkspace(req,res);
   if(req.method==="POST"&&url.pathname==="/api/ops/contracts")return draftContract(req,res);
   if(req.method==="POST"&&url.pathname==="/api/ops/invoices")return draftInvoice(req,res);
+  if(req.method==="POST"&&/^\/api\/ops\/invoices\/[a-f0-9-]{36}\/issue$/i.test(url.pathname))return issueInvoice(req,res,url.pathname.split("/")[4]);
+  if(req.method==="POST"&&/^\/api\/ops\/invoices\/[a-f0-9-]{36}\/manual-payment$/i.test(url.pathname))return manuallyRecordVerifiedPayment(req,res,url.pathname.split("/")[4]);
 
   if(req.method==="GET"&&url.pathname==="/api/superadmin/me")return adminSession(req,res);
   if(req.method==="POST"&&url.pathname==="/api/superadmin/logout")return adminLogout(req,res);
