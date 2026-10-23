@@ -4,6 +4,7 @@ import path from "node:path";
 import {fileURLToPath} from "node:url";
 import crypto from "node:crypto";
 import pg from "pg";
+import {verifyYocoWebhook} from "./lib/yoco-webhooks.mjs";
 import {localCareerGuidance} from "./lib/advice.mjs";
 import {hashPassword,verifyPassword,tokenHash,issueToken,accountCookie,clearAccountCookie,extractAccountCookie} from "./lib/account-auth.mjs";
 import {credentialConfigured,authenticate,superadminUser,superadminStart,superadminEnd,adminCookie,clearAdminCookie} from "./lib/superadmin-auth.mjs";
@@ -601,6 +602,79 @@ async function youtubeSync(req,res,id){
  return json(res,200,{platform:"youtube",observedAt:saved.rows[0].observed_at,subscriberCount:subs,source:"official_api",note:"Public subscriber count only; impressions and reach require separate authorized analytics scopes."});
 }
 
+
+async function createYocoCheckout(req,res,id){
+ if(!superadminUser(req))return fail(res,403,"Superadmin required");
+ if(!validOrigin(req))return fail(res,403,"Origin not allowed");
+ if(!/^[a-f0-9-]{36}$/i.test(id))return fail(res,400,"Invalid invoice ID");
+ const secret=process.env.YOCO_SECRET_KEY||"";
+ if(process.env.YOCO_ENABLE_CHECKOUT!=="true"||!secret)return fail(res,503,"Yoco is not configured for checkout");
+ const mode=secret.startsWith("sk_test_")?"test":secret.startsWith("sk_live_")?"live":null;
+ if(!mode)return fail(res,503,"Invalid Yoco credential mode");
+ if(mode==="live"&&process.env.YOCO_ALLOW_LIVE!=="true")return fail(res,403,"Live payments are disabled pending merchant acceptance testing");
+ let b;try{b=await body(req);}catch(e){return fail(res,400,e.message);}
+ if(b.confirm!==true)return fail(res,400,"Explicit checkout confirmation required");
+ const data=await pool.query("SELECT id,invoice_number,amount_cents,paid_cents,status FROM booking_invoices WHERE id=$1",[id]);
+ if(!data.rowCount)return fail(res,404,"Invoice not found");
+ const invoice=data.rows[0],outstanding=Number(invoice.amount_cents)-Number(invoice.paid_cents);
+ if(!["issued","partially_paid"].includes(invoice.status)||!Number.isSafeInteger(outstanding)||outstanding<200)return fail(res,409,"An issued invoice with at least R2 outstanding is required");
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),12000);
+ let response;
+ try{
+  response=await fetch("https://payments.yoco.com/api/checkouts",{
+   method:"POST",signal:controller.signal,
+   headers:{"Authorization":"Bearer "+secret,"Content-Type":"application/json","Idempotency-Key":"CABO-"+id+"-"+invoice.paid_cents},
+   body:JSON.stringify({amount:outstanding,currency:"ZAR",clientReferenceId:invoice.invoice_number,metadata:{invoiceId:id},successUrl:(process.env.PUBLIC_BASE_URL||"https://cabo-artist-hub.onrender.com")+"/studio"})
+  });
+ }catch{return fail(res,502,"Yoco checkout service unavailable");}
+ finally{clearTimeout(timer);}
+ if(!response.ok)return fail(res,502,"Yoco refused checkout ("+response.status+")");
+ const result=await response.json();
+ if(!result.id||!result.redirectUrl||Number(result.amount)!==outstanding||result.currency!=="ZAR")return fail(res,502,"Yoco returned unexpected checkout details");
+ const redirect=new URL(result.redirectUrl);
+ if(redirect.protocol!=="https:"||!(redirect.hostname==="c.yoco.com"||redirect.hostname.endsWith(".yoco.com")))return fail(res,502,"Untrusted checkout redirect");
+ await pool.query("INSERT INTO yoco_checkouts(invoice_id,checkout_ref,amount_cents,mode) VALUES($1,$2,$3,$4) ON CONFLICT(checkout_ref) DO NOTHING",[id,result.id,outstanding,mode]);
+ return json(res,200,{checkoutId:result.id,url:result.redirectUrl,mode,notice:mode==="test"?"Yoco sandbox checkout. Test payments never mark real invoices paid.":"Live Yoco checkout created; wait for signed webhook before recording payment."});
+}
+async function acceptYocoWebhook(req,res){
+ const secret=process.env.YOCO_WEBHOOK_SECRET;
+ if(!secret)return fail(res,503,"Yoco webhook not configured");
+ let chunks=[],n=0;
+ for await(const part of req){n+=part.length;if(n>40000)return fail(res,413,"Webhook too large");chunks.push(part);}
+ const raw=Buffer.concat(chunks);
+ if(!verifyYocoWebhook(raw,req.headers,secret))return fail(res,401,"Invalid webhook signature or timestamp");
+ let event;try{event=JSON.parse(raw.toString("utf8"));}catch{return fail(res,400,"Invalid webhook JSON");}
+ if(event.type!=="payment.succeeded")return json(res,200,{accepted:true,ignored:true});
+ const e=event.payload||{},checkoutId=e.metadata?.checkoutId,amount=Number(e.amount),mode=e.mode;
+ if(typeof event.id!=="string"||typeof checkoutId!=="string"||!Number.isSafeInteger(amount)||amount<=0||e.currency!=="ZAR"||!["test","live"].includes(mode))return fail(res,400,"Webhook payment fields invalid");
+ const client=await pool.connect();
+ try{
+  await client.query("BEGIN");
+  const data=await client.query("SELECT c.id,c.invoice_id,c.mode,c.amount_cents,c.status FROM yoco_checkouts c WHERE c.checkout_ref=$1 FOR UPDATE",[checkoutId]);
+  if(!data.rowCount){await client.query("ROLLBACK");return fail(res,404,"Checkout not recognized");}
+  const checkout=data.rows[0];
+  if(checkout.mode!==mode||Number(checkout.amount_cents)!==amount){await client.query("ROLLBACK");return fail(res,409,"Checkout mode or amount mismatch");}
+  if(["paid","test_succeeded"].includes(checkout.status)){await client.query("ROLLBACK");return json(res,200,{accepted:true,duplicate:true});}
+  if(mode==="test"){
+   await client.query("UPDATE yoco_checkouts SET status='test_succeeded',updated_at=now() WHERE id=$1",[checkout.id]);
+   await client.query("COMMIT");
+   return json(res,200,{accepted:true,mode:"test",realInvoiceCredited:false});
+  }
+  if(process.env.YOCO_ALLOW_LIVE!=="true"){await client.query("ROLLBACK");return fail(res,403,"Live payment processing disabled");}
+  const invoiceData=await client.query("SELECT id,amount_cents,paid_cents,status FROM booking_invoices WHERE id=$1 FOR UPDATE",[checkout.invoice_id]);
+  if(!invoiceData.rowCount){await client.query("ROLLBACK");return fail(res,404,"Invoice not found");}
+  const invoice=invoiceData.rows[0],balance=Number(invoice.amount_cents)-Number(invoice.paid_cents);
+  if(!["issued","partially_paid"].includes(invoice.status)||amount>balance){await client.query("ROLLBACK");return fail(res,409,"Payment requires manual reconciliation; invoice status or balance changed");}
+  const credit=await client.query("INSERT INTO invoice_payment_events(invoice_id,provider,provider_event_id,amount_cents) VALUES($1,'yoco',$2,$3) ON CONFLICT(provider,provider_event_id) DO NOTHING RETURNING id",[invoice.id,String(e.id||event.id),amount]);
+  if(!credit.rowCount){await client.query("ROLLBACK");return json(res,200,{accepted:true,duplicate:true});}
+  const paid=Number(invoice.paid_cents)+amount;
+  await client.query("UPDATE booking_invoices SET paid_cents=$1,status=$2 WHERE id=$3",[paid,paid===Number(invoice.amount_cents)?"paid":"partially_paid",invoice.id]);
+  await client.query("UPDATE yoco_checkouts SET status='paid',updated_at=now() WHERE id=$1",[checkout.id]);
+  await client.query("COMMIT");
+  return json(res,200,{accepted:true,mode:"live"});
+ }catch(err){await client.query("ROLLBACK");throw err;}finally{client.release();}
+}
+
 const server=http.createServer(async(req,res)=>{
  try{
   const url=new URL(req.url||"/","http://localhost");
@@ -639,6 +713,8 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==="POST"&&url.pathname==="/api/ops/invoices")return draftInvoice(req,res);
   if(req.method==="POST"&&/^\/api\/ops\/invoices\/[a-f0-9-]{36}\/issue$/i.test(url.pathname))return issueInvoice(req,res,url.pathname.split("/")[4]);
   if(req.method==="POST"&&/^\/api\/ops\/invoices\/[a-f0-9-]{36}\/manual-payment$/i.test(url.pathname))return manuallyRecordVerifiedPayment(req,res,url.pathname.split("/")[4]);
+  if(req.method==="POST"&&/^\/api\/ops\/invoices\/[a-f0-9-]{36}\/yoco-checkout$/i.test(url.pathname))return createYocoCheckout(req,res,url.pathname.split("/")[4]);
+  if(req.method==="POST"&&url.pathname==="/api/payments/yoco/webhook")return acceptYocoWebhook(req,res);
 
   if(req.method==="GET"&&url.pathname==="/api/superadmin/me")return adminSession(req,res);
   if(req.method==="POST"&&url.pathname==="/api/superadmin/logout")return adminLogout(req,res);
