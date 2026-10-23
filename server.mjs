@@ -373,6 +373,18 @@ async function approveAccount(req,res,id){
  return json(res,200,{account:r.rows[0],notice:"Superadmin manually approved account; ensure email ownership was independently verified."});
 }
 
+
+async function grantArtistMembership(req,res){
+ if(!superadminUser(req))return fail(res,403,"Superadmin required");
+ if(!validOrigin(req))return fail(res,403,"Origin not allowed");
+ let b;try{b=await body(req);}catch(e){return fail(res,400,e.message);}
+ const account=text(b.accountId,60),artistSlug=text(b.artistSlug,100),role=text(b.accessRole,30);
+ if(!/^[a-f0-9-]{36}$/i.test(account)||!artistSlug||!["owner","editor","viewer"].includes(role))return fail(res,400,"Valid account, artist and access role required");
+ const q=await pool.query("INSERT INTO artist_account_memberships(account_id,artist_id,access_role) SELECT u.id,a.id,$3 FROM hub_accounts u CROSS JOIN artists a WHERE u.id=$1 AND a.slug=$2 AND u.verified_at IS NOT NULL AND u.disabled_at IS NULL AND u.role='artist' ON CONFLICT (account_id,artist_id) DO UPDATE SET access_role=EXCLUDED.access_role RETURNING account_id,artist_id,access_role",[account,artistSlug,role]);
+ if(!q.rowCount)return fail(res,404,"Verified artist account and target artist required");
+ return json(res,200,{membership:q.rows[0],notice:"Artist membership approved by superadmin."});
+}
+
 const server=http.createServer(async(req,res)=>{
  try{
   const url=new URL(req.url||"/","http://localhost");
@@ -393,6 +405,7 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==="GET"&&url.pathname==="/api/accounts/artists")return myArtistAccess(req,res);
   if(req.method==="GET"&&url.pathname==="/api/ops/summary")return opsSummary(req,res);
   if(req.method==="GET"&&url.pathname==="/api/ops/accounts")return pendingAccounts(req,res);
+  if(req.method==="POST"&&url.pathname==="/api/ops/memberships")return grantArtistMembership(req,res);
   if(req.method==="POST"&&url.pathname.startsWith("/api/ops/accounts/")&&url.pathname.endsWith("/approve"))return approveAccount(req,res,url.pathname.slice("/api/ops/accounts/".length,-"/approve".length));
   if(req.method==="GET"&&url.pathname==="/api/ops/finance")return financeWorkspace(req,res);
   if(req.method==="POST"&&url.pathname==="/api/ops/contracts")return draftContract(req,res);
