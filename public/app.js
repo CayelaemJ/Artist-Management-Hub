@@ -477,9 +477,24 @@ async function restoreRealAccount(){
  catch{realAccount=null;}
  setDemoUI(demoAccount);
 }
+
+async function loadVerifiedNotifications(){
+ const root=$("verified-notifications");if(!root||!realAccount)return;
+ try{
+  const d=await fetchJSON("/api/accounts/notifications");
+  root.innerHTML='<h3>Your in-app notifications ('+d.notifications.filter(n=>!n.read_at).length+' unread)</h3>'+(
+   d.notifications.map(n=>'<article class="enquiry-item"><strong>'+esc(n.subject)+'</strong><p>'+esc(n.body)+'</p><small>'+prettyDate(n.created_at)+(n.read_at?' · Read':' · Unread')+'</small>'+(!n.read_at?'<button type="button" class="outline-button" data-read-notice="'+esc(n.id)+'">Mark read ↗</button>':'')+'</article>').join("")||'<p>There are no new messages for this account.</p>');
+  root.querySelectorAll("[data-read-notice]").forEach(btn=>btn.addEventListener("click",async()=>{
+   btn.disabled=true;
+   try{await fetchJSON("/api/accounts/notifications/"+encodeURIComponent(btn.dataset.readNotice)+"/read",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});await loadVerifiedNotifications();}
+   catch(err){root.textContent=err.message;}
+  }));
+ }catch(err){root.textContent="Notifications unavailable: "+err.message;}
+}
+
 async function renderVerifiedWorkspace(root){
  if(!realAccount)return;
- root.innerHTML='<div class="demo-welcome"><span class="eyebrow">VERIFIED ACCOUNT / '+esc(realAccount.role.toUpperCase())+'</span><h3>'+esc(realAccount.name)+'</h3><p>'+esc(realAccount.email)+' · These are your permission-scoped records, not demonstration data.</p></div><section class="demo-tasks" id="verified-account-data"><p class="loading">Loading access-scoped records…</p></section>';
+ root.innerHTML='<div class="demo-welcome"><span class="eyebrow">VERIFIED ACCOUNT / '+esc(realAccount.role.toUpperCase())+'</span><h3>'+esc(realAccount.name)+'</h3><p>'+esc(realAccount.email)+' · These are your permission-scoped records, not demonstration data.</p></div><section class="demo-tasks" id="verified-account-data"><p class="loading">Loading access-scoped records…</p></section><section class="demo-tasks" id="verified-notifications"><p class="loading">Loading messages…</p></section>';
  const area=$("verified-account-data");
  try{
   if(realAccount.role==="customer"){
@@ -498,6 +513,7 @@ async function renderVerifiedWorkspace(root){
    }));
   }else{area.textContent="Your role requires a dedicated access review.";}
  }catch(err){area.textContent="Could not load account records: "+err.message;}
+ await loadVerifiedNotifications();
 }
 async function realLogin(e){
  e.preventDefault();const msg=$("real-login-message"),btn=e.currentTarget.querySelector('button[type="submit"]');
