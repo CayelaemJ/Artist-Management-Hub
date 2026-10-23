@@ -26,7 +26,7 @@ test("scoped contract review, immutable terms acceptance, notification and rollb
   assert.equal(draft.rows[0].status,"draft");
   const update=await client.query("UPDATE booking_contracts SET status='sent',sent_at=now() WHERE id=$1 AND status='draft' RETURNING status",[cid]);
   assert.equal(update.rows[0].status,"sent");
-  const other=await client.query("SELECT id FROM booking_contracts c JOIN booking_enquiries b ON b.id=c.booking_id WHERE c.id=$1 AND b.customer_account_id=$2",[cid,"00000000-0000-0000-0000-000000000000"]);
+  const other=await client.query("SELECT c.id FROM booking_contracts c JOIN booking_enquiries b ON b.id=c.booking_id WHERE c.id=$1 AND b.customer_account_id=$2",[cid,"00000000-0000-0000-0000-000000000000"]);
   assert.equal(other.rowCount,0,"Other customers must never see this agreement");
   const hash=crypto.createHash("sha256").update(title+"\n"+terms).digest("hex");
   const accepted=await client.query("INSERT INTO contract_acceptances(contract_id,customer_account_id,signer_name,terms_sha256) VALUES($1,$2,$3,$4) RETURNING id,terms_sha256",[cid,aid,"Fictional QA",hash]);
