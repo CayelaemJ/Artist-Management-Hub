@@ -291,7 +291,8 @@ async function accountRegister(req,res){
  let pass;try{pass=hashPassword(b.password);}catch(e){return fail(res,400,e.message);}
  try{
   const r=await pool.query("INSERT INTO hub_accounts(email,password_hash,display_name,role) VALUES($1,$2,$3,$4) RETURNING id,email,display_name,role",[email,pass,name,role]);
-  return json(res,201,{account:r.rows[0],message:"Account created, pending superadmin verification and approval. No private artist access is granted yet."});
+  const sent=await issueEmailVerification(r.rows[0].id,email);
+  return json(res,201,{account:r.rows[0],emailSent:sent,message:sent?"Account created. Check your inbox to verify email; management approval is also required.":"Account created, pending out-of-band email verification and management approval. Automatic email is not configured."});
  }catch(e){if(e.code==="23505")return fail(res,409,"Account already exists");throw e;}
 }
 async function accountLogin(req,res){
@@ -299,10 +300,10 @@ async function accountLogin(req,res){
  if(!rateLimit(req,"account-login",6,900000))return fail(res,429,"Too many attempts");
  let b;try{b=await body(req);}catch(e){return fail(res,400,e.message);}
  const email=text(b.email,254).toLowerCase();
- const r=await pool.query("SELECT id,email,password_hash,display_name,role,verified_at FROM hub_accounts WHERE email=$1 AND disabled_at IS NULL",[email]);
+ const r=await pool.query("SELECT id,email,password_hash,display_name,role,verified_at,email_verified_at FROM hub_accounts WHERE email=$1 AND disabled_at IS NULL",[email]);
  // Deliberately do not issue sessions to unverified accounts.
  if(!r.rowCount||!verifyPassword(b.password,r.rows[0].password_hash))return fail(res,401,"Invalid credentials");
- const a=r.rows[0];if(!a.verified_at)return fail(res,403,"Email verification is required before account access");
+ const a=r.rows[0];if(!a.email_verified_at||!a.verified_at)return fail(res,403,"Email verification and management approval are required before account access");
  const t=issueToken();
  await pool.query("INSERT INTO hub_sessions(token_hash,account_id,expires_at) VALUES($1,$2,now()+interval '12 hours')",[tokenHash(t),a.id]);
  res.setHeader("Set-Cookie",accountCookie(t));
@@ -371,7 +372,7 @@ async function approveAccount(req,res,id){
  if(!/^[0-9a-f-]{36}$/i.test(id))return fail(res,400,"Invalid account ID");
  let b;try{b=await body(req);}catch(e){return fail(res,400,e.message);}
  if(b.confirm!==true)return fail(res,400,"Explicit verification confirmation required");
- const r=await pool.query("UPDATE hub_accounts SET verified_at=now() WHERE id=$1 AND disabled_at IS NULL AND verified_at IS NULL RETURNING id,email,role,verified_at",[id]);
+ const r=await pool.query("UPDATE hub_accounts SET verified_at=now(),email_verified_at=COALESCE(email_verified_at,now()) WHERE id=$1 AND disabled_at IS NULL AND verified_at IS NULL RETURNING id,email,role,verified_at,email_verified_at",[id]);
  if(!r.rowCount)return fail(res,404,"Pending account not found");
  return json(res,200,{account:r.rows[0],notice:"Superadmin manually approved account; ensure email ownership was independently verified."});
 }
@@ -511,6 +512,53 @@ async function manuallyRecordVerifiedPayment(req,res,id){
  }catch(e){await client.query("ROLLBACK");if(e.code==="23505")return fail(res,409,"Payment reference already recorded");throw e;}finally{client.release();}
 }
 
+
+async function issueEmailVerification(accountId,email){
+ if(!process.env.RESEND_API_KEY||!process.env.VERIFICATION_FROM_EMAIL)return false;
+ const raw=crypto.randomBytes(32).toString("hex");
+ const hashed=crypto.createHash("sha256").update(raw).digest("hex");
+ await pool.query("INSERT INTO account_verification_tokens(token_hash,account_id,expires_at) VALUES($1,$2,now()+interval '24 hours')",[hashed,accountId]);
+ const origin=(process.env.PUBLIC_BASE_URL||"https://cabo-artist-hub.onrender.com").replace(/\/+$/,"");
+ const link=origin+"/#verify="+raw;
+ const payload={from:process.env.VERIFICATION_FROM_EMAIL,to:[email],subject:"Verify your CABO Artist Hub email",html:'<p>Confirm that you requested a CABO Artist Hub account.</p><p><a href="'+link+'">Verify email address</a></p><p>Link expires after 24 hours. Management approval is separately required.</p>'};
+ try{
+  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),8000);
+  try{
+   const response=await fetch("https://api.resend.com/emails",{method:"POST",signal:controller.signal,headers:{"Content-Type":"application/json",Authorization:"Bearer "+process.env.RESEND_API_KEY},body:JSON.stringify(payload)});
+   if(!response.ok)throw Error("Verification email provider returned status "+response.status);
+   return true;
+  }finally{clearTimeout(timeout);}
+ }catch(e){console.warn("Verification delivery unavailable",String(e.message||e).slice(0,110));return false;}
+}
+async function verifyEmail(req,res){
+ if(!validOrigin(req))return fail(res,403,"Origin not allowed");
+ if(!rateLimit(req,"verify-email",12,600000))return fail(res,429,"Too many verification attempts");
+ let b;try{b=await body(req);}catch(e){return fail(res,400,e.message);}
+ const token=text(b.token,100);
+ if(!/^[a-f0-9]{64}$/.test(token))return fail(res,400,"Invalid verification token");
+ const hash=crypto.createHash("sha256").update(token).digest("hex");
+ const client=await pool.connect();
+ try{
+  await client.query("BEGIN");
+  const result=await client.query("UPDATE account_verification_tokens SET consumed_at=now() WHERE token_hash=$1 AND consumed_at IS NULL AND expires_at>now() RETURNING account_id",[hash]);
+  if(!result.rowCount){await client.query("ROLLBACK");return fail(res,400,"Verification link has expired or was already used");}
+  await client.query("UPDATE hub_accounts SET email_verified_at=COALESCE(email_verified_at,now()) WHERE id=$1",[result.rows[0].account_id]);
+  await client.query("COMMIT");
+  return json(res,200,{verified:true,message:"Email verified. Management approval may still be required."});
+ }catch(e){await client.query("ROLLBACK");throw e;}finally{client.release();}
+}
+async function resendVerification(req,res){
+ if(!validOrigin(req))return fail(res,403,"Origin not allowed");
+ if(!rateLimit(req,"resend-verification",3,3600000))return fail(res,429,"Verification resend limit reached");
+ let b;try{b=await body(req);}catch(e){return fail(res,400,e.message);}
+ const email=text(b.email,254).toLowerCase();
+ if(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+  const account=await pool.query("SELECT id,email FROM hub_accounts WHERE email=$1 AND disabled_at IS NULL AND email_verified_at IS NULL",[email]);
+  if(account.rowCount)await issueEmailVerification(account.rows[0].id,email);
+ }
+ return json(res,200,{message:"If the account is eligible and email delivery is configured, a verification link has been sent."});
+}
+
 const server=http.createServer(async(req,res)=>{
  try{
   const url=new URL(req.url||"/","http://localhost");
@@ -525,6 +573,8 @@ const server=http.createServer(async(req,res)=>{
   }
   if(req.method==="POST"&&url.pathname==="/api/superadmin/login")return adminLogin(req,res);
   if(req.method==="POST"&&url.pathname==="/api/accounts/register")return accountRegister(req,res);
+  if(req.method==="POST"&&url.pathname==="/api/accounts/verify-email")return verifyEmail(req,res);
+  if(req.method==="POST"&&url.pathname==="/api/accounts/resend-verification")return resendVerification(req,res);
   if(req.method==="POST"&&url.pathname==="/api/accounts/login")return accountLogin(req,res);
   if(req.method==="GET"&&url.pathname==="/api/accounts/me")return accountMe(req,res);
   if(req.method==="POST"&&url.pathname==="/api/accounts/logout")return accountLogout(req,res);
