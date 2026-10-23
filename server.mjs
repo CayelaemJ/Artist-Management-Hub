@@ -4,6 +4,7 @@ import path from "node:path";
 import {fileURLToPath} from "node:url";
 import crypto from "node:crypto";
 import pg from "pg";
+import {credentialConfigured,authenticate,superadminUser,superadminStart,superadminEnd,adminCookie,clearAdminCookie} from "./lib/superadmin-auth.mjs";
 import {DEMO_ENABLED,findDemoUser,loginAttemptAllowed,newSession,sessionUser,endSession,sessionCookie,clearSessionCookie,demoWorkspace} from "./lib/demo-auth.mjs";
 import {weightedScore,PR_WEIGHTS,HEALTH_WEIGHTS,financialTotals} from "./lib/metrics.mjs";
 
@@ -36,6 +37,7 @@ const headers={
 function json(res,status,data){res.writeHead(status,{...headers,"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store"});res.end(JSON.stringify(data));}
 function fail(res,status,message){json(res,status,{error:message});}
 function authorised(req){
+  if(superadminUser(req))return true;
   const header=req.headers.authorization||"";
   const token=header.startsWith("Bearer ")?header.slice(7):"";
   if(!ADMIN_TOKEN||!token) return false;
@@ -246,18 +248,42 @@ function myDemoWorkspace(req,res){
  return json(res,200,demoWorkspace(u));
 }
 
+async function adminLogin(req,res){
+ if(!credentialConfigured())return fail(res,503,"Superadmin not configured");
+ if(!validOrigin(req))return fail(res,403,"Origin not allowed");
+ if(!rateLimit(req,"superadmin-login",5,900000))return fail(res,429,"Too many login attempts");
+ let b;try{b=await body(req);}catch(e){return fail(res,400,e.message);}
+ if(!authenticate(b.username,b.password))return fail(res,401,"Invalid credentials");
+ const token=superadminStart(b.username);
+ res.setHeader("Set-Cookie",adminCookie(token));
+ return json(res,200,{authenticated:true,role:"superadmin",username:b.username,expiresInSeconds:3600});
+}
+function adminSession(req,res){
+ const user=superadminUser(req);
+ if(!user)return fail(res,401,"Superadmin sign-in required");
+ return json(res,200,{authenticated:true,...user});
+}
+function adminLogout(req,res){
+ if(!validOrigin(req))return fail(res,403,"Origin not allowed");
+ superadminEnd(req);res.setHeader("Set-Cookie",clearAdminCookie());
+ return json(res,200,{authenticated:false});
+}
+
 const server=http.createServer(async(req,res)=>{
  try{
   const url=new URL(req.url||"/","http://localhost");
   if(req.method==="GET"&&url.pathname==="/api/health"){
    if(!pool)return fail(res,503,"DATABASE_URL not configured");
-   await pool.query("SELECT 1");return json(res,200,{status:"ok",database:"connected",demo:true,aiConfigured:Boolean(GROQ_API_KEY),adminEnabled:Boolean(ADMIN_TOKEN)});
+   await pool.query("SELECT 1");return json(res,200,{status:"ok",database:"connected",demo:true,aiConfigured:Boolean(GROQ_API_KEY),adminEnabled:Boolean(ADMIN_TOKEN||credentialConfigured())});
   }
   if(url.pathname.startsWith("/api/")&&url.pathname!=="/api/health"){
    if(!rateLimit(req,"api",240,60_000))return fail(res,429,"Too many requests. Please retry later.");
    if(url.pathname.startsWith("/api/admin/")&&!rateLimit(req,"admin",60,60_000))return fail(res,429,"Too many admin requests.");
    if(url.pathname.startsWith("/api/demo-")&&!rateLimit(req,"demo",90,60_000))return fail(res,429,"Too many demo requests.");
   }
+  if(req.method==="POST"&&url.pathname==="/api/superadmin/login")return adminLogin(req,res);
+  if(req.method==="GET"&&url.pathname==="/api/superadmin/me")return adminSession(req,res);
+  if(req.method==="POST"&&url.pathname==="/api/superadmin/logout")return adminLogout(req,res);
   // Preview identities are deliberately independent of real Neon data.
   if(req.method==="POST"&&url.pathname==="/api/demo-auth/login")return await demoLogin(req,res);
   if(req.method==="POST"&&url.pathname==="/api/demo-auth/logout")return demoLogout(req,res);
