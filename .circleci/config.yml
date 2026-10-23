@@ -7,6 +7,9 @@ jobs:
     steps:
       - checkout
       - run:
+          name: Test and scan committed credentials (redacted output)
+          command: node --test scripts/security/scan-secrets.test.mjs && node scripts/security/scan-secrets.mjs
+      - run:
           name: Install production dependencies
           command: npm install --omit=dev
       - run:
