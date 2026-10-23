@@ -339,7 +339,7 @@ async function financeWorkspace(req,res){
   pool.query("SELECT c.id,c.booking_id,c.title,c.status,c.created_at FROM booking_contracts c ORDER BY c.created_at DESC LIMIT 100"),
   pool.query("SELECT i.id,i.booking_id,i.invoice_number,i.currency,i.amount_cents,i.paid_cents,i.status,i.due_date FROM booking_invoices i ORDER BY i.created_at DESC LIMIT 100")
  ]);
- return json(res,200,{contracts:contracts.rows,invoices:invoices.rows,note:"Invoices are not evidence of received payments; provider reconciliation is not configured."});
+ return json(res,200,{contracts:contracts.rows,invoices:invoices.rows,yocoReady:Boolean(process.env.YOCO_SECRET_KEY&&process.env.YOCO_WEBHOOK_SECRET&&process.env.YOCO_ENABLE_CHECKOUT==="true"),yocoMode:(process.env.YOCO_SECRET_KEY||"").startsWith("sk_test_")?"test":(process.env.YOCO_SECRET_KEY||"").startsWith("sk_live_")?"live":null,note:"Invoices are not evidence of received payments. Gateway credit requires validated, signed Yoco webhooks."});
 }
 async function draftContract(req,res){
  if(!superadminUser(req))return fail(res,403,"Superadmin required");
