@@ -109,6 +109,7 @@ async function listBookings(req,res){
  json(res,200,{enquiries:r.rows,allowedTransitions:transitions});
 }
 async function changeBooking(req,res,id){
+ if(!validOrigin(req))return fail(res,403,"Origin not allowed");
  if(!authorised(req))return fail(res,401,"Management access required");
  if(!/^[0-9a-f-]{36}$/i.test(id))return fail(res,400,"Invalid booking reference");
  let b;try{b=await body(req);}catch(e){return fail(res,400,e.message);}
@@ -132,6 +133,7 @@ async function changeBooking(req,res,id){
  }catch(e){await client.query("ROLLBACK");throw e;}finally{client.release();}
 }
 async function aiAdvice(req,res){
+ if(!validOrigin(req))return fail(res,403,"Origin not allowed");
  if(!authorised(req))return fail(res,401,"Management access required for AI");
  if(!GROQ_API_KEY)return fail(res,503,"Groq is not configured. Add GROQ_API_KEY as a Render secret.");
  if(!rateLimit(req,"ai",6,600000))return fail(res,429,"AI request limit reached. Please try later.");
@@ -194,6 +196,7 @@ async function demoBookingCreate(req,res){
  return json(res,201,{demo:true,reference:r.rows[0].id,status:r.rows[0].status,message:"Fictional booking enquiry saved to the separate demonstration table. Not a real reservation."});
 }
 async function demoBookingUpdate(req,res,id){
+ if(!validOrigin(req))return fail(res,403,"Origin not allowed");
  const user=sessionUser(req);
  if(!user||user.role!=="manager")return fail(res,403,"Demo manager sign-in required");
  if(!validOrigin(req))return fail(res,403,"Origin not allowed");
