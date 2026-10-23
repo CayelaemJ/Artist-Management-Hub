@@ -407,6 +407,35 @@ async function accountCustomerBookings(req,res){
  return json(res,200,{bookings:[],verificationRequired:true,message:"Booking ownership must be verified before historical enquiries can be linked to your account."});
 }
 
+
+async function recordOperationalCheck(req,res){
+ if(!superadminUser(req))return fail(res,403,"Superadmin required");
+ if(!validOrigin(req))return fail(res,403,"Origin not allowed");
+ const checks=[];
+ const started=Date.now();
+ try{await pool.query("SELECT 1");checks.push({name:"database",outcome:"pass",details:"Neon query succeeded in "+(Date.now()-started)+"ms"});}
+ catch{checks.push({name:"database",outcome:"fail",details:"Database query failed"});}
+ try{
+  const r=await pool.query("SELECT COUNT(*)::int AS n FROM artists WHERE synthetic=TRUE");
+  checks.push({name:"demo_roster",outcome:r.rows[0].n>0?"pass":"warn",details:"Synthetic artist records: "+r.rows[0].n});
+ }catch{checks.push({name:"demo_roster",outcome:"fail",details:"Roster query failed"});}
+ checks.push({name:"ai_provider",outcome:GROQ_API_KEY?"warn":"warn",details:GROQ_API_KEY?"Key configured; upstream response not tested":"GROQ_API_KEY not configured"});
+ checks.push({name:"payment_provider",outcome:"warn",details:"Payment provider not connected"});
+ checks.push({name:"backup_restore",outcome:"warn",details:"Backup restore drill has not been verified"});
+ const client=await pool.connect();
+ try{
+  await client.query("BEGIN");
+  for(const c of checks)await client.query("INSERT INTO hub_operational_checks(check_name,outcome,details) VALUES($1,$2,$3)",[c.name,c.outcome,c.details]);
+  await client.query("COMMIT");
+ }catch(err){await client.query("ROLLBACK");throw err;}finally{client.release();}
+ return json(res,200,{checks,recorded:true,checkedAt:new Date().toISOString()});
+}
+async function operationalHistory(req,res){
+ if(!superadminUser(req))return fail(res,403,"Superadmin required");
+ const r=await pool.query("SELECT check_name,outcome,details,checked_at FROM hub_operational_checks ORDER BY checked_at DESC LIMIT 40");
+ return json(res,200,{history:r.rows});
+}
+
 const server=http.createServer(async(req,res)=>{
  try{
   const url=new URL(req.url||"/","http://localhost");
@@ -428,6 +457,8 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==="GET"&&url.pathname.startsWith("/api/accounts/artist-dashboard/"))return accountArtistDashboard(req,res,decodeURIComponent(url.pathname.slice("/api/accounts/artist-dashboard/".length)));
   if(req.method==="GET"&&url.pathname==="/api/accounts/bookings")return accountCustomerBookings(req,res);
   if(req.method==="GET"&&url.pathname==="/api/ops/summary")return opsSummary(req,res);
+  if(req.method==="POST"&&url.pathname==="/api/ops/check")return recordOperationalCheck(req,res);
+  if(req.method==="GET"&&url.pathname==="/api/ops/history")return operationalHistory(req,res);
   if(req.method==="GET"&&url.pathname==="/api/ops/accounts")return pendingAccounts(req,res);
   if(req.method==="POST"&&url.pathname==="/api/ops/memberships")return grantArtistMembership(req,res);
   if(req.method==="POST"&&url.pathname.startsWith("/api/ops/accounts/")&&url.pathname.endsWith("/approve"))return approveAccount(req,res,url.pathname.slice("/api/ops/accounts/".length,-"/approve".length));
