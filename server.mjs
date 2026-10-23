@@ -4,6 +4,7 @@ import path from "node:path";
 import {fileURLToPath} from "node:url";
 import crypto from "node:crypto";
 import pg from "pg";
+import {buildManagementAnalytics,reportPeriod} from "./lib/management-analytics.mjs";
 import {retryDelaySeconds,sendResendEmail} from "./lib/email-outbox.mjs";
 import {verifyYocoWebhook} from "./lib/yoco-webhooks.mjs";
 import {localCareerGuidance} from "./lib/advice.mjs";
@@ -397,6 +398,14 @@ async function myArtistAccess(req,res){
  const a=await accountSession(req);if(!a)return fail(res,401,"Account sign-in required");
  const r=await pool.query("SELECT ar.artist_id, ar.access_role, a.stage_name,a.slug FROM artist_account_memberships ar JOIN artists a ON a.id=ar.artist_id WHERE ar.account_id=$1 ORDER BY a.stage_name",[a.id]);
  return json(res,200,{memberships:r.rows,accountRole:a.role});
+}
+async function opsAnalytics(req,res,url){
+ if(!superadminUser(req))return fail(res,403,"Superadmin only");
+ if(!rateLimit(req,"analytics",20,60000))return fail(res,429,"Analytics rate limit reached");
+ let days;
+ try{days=reportPeriod(url.searchParams.get("days"));}catch(err){return fail(res,400,err.message);}
+ const report=await buildManagementAnalytics(pool,days);
+ return json(res,200,report);
 }
 async function opsSummary(req,res){
  if(!superadminUser(req))return fail(res,403,"Superadmin only");
@@ -894,6 +903,7 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==="GET"&&url.pathname==="/api/accounts/notifications")return accountNotifications(req,res);
   if(req.method==="POST"&&/^\/api\/accounts\/notifications\/[a-f0-9-]{36}\/read$/i.test(url.pathname))return readAccountNotification(req,res,url.pathname.split("/")[4]);
   if(req.method==="GET"&&url.pathname==="/api/ops/summary")return opsSummary(req,res);
+  if(req.method==="GET"&&url.pathname==="/api/ops/analytics")return opsAnalytics(req,res,url);
   if(req.method==="POST"&&url.pathname==="/api/ops/check")return recordOperationalCheck(req,res);
   if(req.method==="GET"&&url.pathname==="/api/ops/history")return operationalHistory(req,res);
   if(req.method==="GET"&&url.pathname==="/api/ops/notifications")return opsNotifications(req,res);
