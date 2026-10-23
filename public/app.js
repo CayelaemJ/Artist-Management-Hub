@@ -72,6 +72,7 @@ function showStudio(panel="overview"){
  $("public-view").hidden=true;$("studio-view").hidden=false;
  document.querySelectorAll(".studio-tab").forEach(tab=>tab.classList.toggle("active",tab.dataset.panel===panel));
  for(const id of ["demo","overview","enquiries","ai"])$(id+"-panel").hidden=id!==panel;
+ if(panel==="enquiries"&&superadminActive)loadEnquiries();
  if(location.pathname!=="/studio")history.pushState({view:"studio"},"","/studio");
  window.scrollTo(0,0);
  if(panel==="overview")loadOverview();
@@ -158,6 +159,27 @@ async function loadOverview(){
     '<section class="dash-card"><h3>Social listening signals</h3><p>These are fictional examples, not live API data. Monitoring connectors are not yet connected.</p>'+social+'</section></div>'+dashboardNotes(d);
  }catch(err){$("overview-content").innerHTML="";$("overview-error").hidden=false;$("overview-error").textContent=err.message;}
 }
+
+let superadminActive=false;
+async function checkSuperadmin(){
+ try {await fetchJSON("/api/superadmin/me");superadminActive=true;}catch{superadminActive=false;}
+ $("superadmin-login-form").hidden=superadminActive;
+ $("superadmin-logout").hidden=!superadminActive;
+ $("admin-form").hidden=superadminActive;
+ $("superadmin-session-status").textContent=superadminActive?"Superadmin session active. Booking management and AI unlocked.":"Sign in as superadmin to manage real enquiries.";
+}
+async function superadminLogin(e){
+ e.preventDefault();
+ $("superadmin-session-status").textContent="Authenticating…";
+ try{
+  await fetchJSON("/api/superadmin/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:$("superadmin-username").value,password:$("superadmin-password").value})});
+  $("superadmin-password").value="";await checkSuperadmin();await loadEnquiries();
+ }catch(e){$("superadmin-session-status").textContent=e.message;}
+}
+async function superadminLogout(){
+ try{await fetchJSON("/api/superadmin/logout",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});superadminActive=false;adminToken="";await checkSuperadmin();$("enquiry-list").innerHTML="";}catch(e){$("superadmin-session-status").textContent=e.message;}
+}
+
 async function loadEnquiries(){
  const message=$("admin-message"),out=$("enquiry-list");
  message.textContent="Fetching private enquiries…";
@@ -184,7 +206,7 @@ async function loadEnquiries(){
 async function askAI(e){
  e.preventDefault();
  const answer=$("ai-answer");answer.textContent="Asking CABO intelligence…";
- if(!adminToken){answer.textContent="Enter your management token under Booking management first.";return;}
+ if(!adminToken&&!superadminActive){answer.textContent="Sign in as superadmin or supply a management token under Booking management first.";return;}
  try{
   const d=await fetchJSON("/api/ai/advice",postJSON("POST",{artistSlug:$("ai-artist").value,question:$("ai-question").value}));
   answer.textContent=d.answer+"\n\n— AI-generated advice based on synthetic demo data. Review before using.";
@@ -317,6 +339,9 @@ document.addEventListener("DOMContentLoaded",async()=>{
  $("studio-artist").addEventListener("change",loadOverview);
  $("admin-form").addEventListener("submit",e=>{e.preventDefault();adminToken=$("admin-token").value.trim();$("admin-token").value="";loadEnquiries();});
  $("ai-form").addEventListener("submit",askAI);
+ $("superadmin-login-form").addEventListener("submit",superadminLogin);
+ $("superadmin-logout").addEventListener("click",superadminLogout);
+ await checkSuperadmin();
  window.addEventListener("popstate",()=>location.pathname==="/studio"?showStudio():showPublic());
  try{
   const d=await fetchJSON("/api/artists");artists=d.artists;
