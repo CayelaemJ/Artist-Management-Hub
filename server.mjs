@@ -43,9 +43,12 @@ function authorised(req){
   return crypto.timingSafeEqual(a,b);
 }
 function rateLimit(req,key,max,windowMs){
- const ip=String(req.headers["x-forwarded-for"]||req.socket.remoteAddress||"unknown").split(",")[0].trim().slice(0,100);
+ // Never trust caller-controlled forwarded headers unless the reverse proxy rewrites them.
+ const forwarded=String(req.headers["x-forwarded-for"]||"").split(",")[0].trim();
+ const ip=(process.env.TRUST_PROXY_HOPS==="1"&&forwarded?forwarded:String(req.socket.remoteAddress||"unknown")).slice(0,100);
  const id=key+":"+ip, now=Date.now();
- if(buckets.size>10000) for(const [k,v] of buckets) if(v.reset<now) buckets.delete(k);
+ if(buckets.size>=50000) for(const [k,v] of buckets) if(v.reset<=now) buckets.delete(k);
+ if(buckets.size>=50000&&!buckets.has(id))return false; // bounded, fail-closed
  const cur=buckets.get(id);
  if(!cur||cur.reset<now){buckets.set(id,{count:1,reset:now+windowMs});return true;}
  cur.count++;return cur.count<=max;
@@ -249,6 +252,11 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==="GET"&&url.pathname==="/api/health"){
    if(!pool)return fail(res,503,"DATABASE_URL not configured");
    await pool.query("SELECT 1");return json(res,200,{status:"ok",database:"connected",demo:true,aiConfigured:Boolean(GROQ_API_KEY),adminEnabled:Boolean(ADMIN_TOKEN)});
+  }
+  if(url.pathname.startsWith("/api/")&&url.pathname!=="/api/health"){
+   if(!rateLimit(req,"api",240,60_000))return fail(res,429,"Too many requests. Please retry later.");
+   if(url.pathname.startsWith("/api/admin/")&&!rateLimit(req,"admin",60,60_000))return fail(res,429,"Too many admin requests.");
+   if(url.pathname.startsWith("/api/demo-")&&!rateLimit(req,"demo",90,60_000))return fail(res,429,"Too many demo requests.");
   }
   // Preview identities are deliberately independent of real Neon data.
   if(req.method==="POST"&&url.pathname==="/api/demo-auth/login")return await demoLogin(req,res);
