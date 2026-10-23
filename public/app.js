@@ -751,7 +751,7 @@ document.addEventListener("DOMContentLoaded",async()=>{
   const d=await fetchJSON("/api/artists");artists=d.artists;
   renderRoster();
   for(const id of ["studio-artist","ai-artist"])$(id).innerHTML=artists.map(a=>'<option value="'+esc(a.slug)+'">'+esc(a.stage_name)+'</option>').join("");
-  if(location.pathname==="/studio")showStudio();
+  if(location.pathname==="/studio"&&$("studio-view").hidden)showStudio();
  }catch(err){
   publicPreviewOnly=true;
   artists=staticDemoArtists;
@@ -759,6 +759,6 @@ document.addEventListener("DOMContentLoaded",async()=>{
   for(const id of ["studio-artist","ai-artist"])$(id).innerHTML=artists.map(a=>'<option value="'+esc(a.slug)+'">'+esc(a.stage_name)+'</option>').join("");
   $("artist-load-error").hidden=false;
   $("artist-load-error").textContent="Public preview mode: live database features and bookings are temporarily unavailable. This roster is fictional.";
-  if(location.pathname==="/studio")showStudio();
+  if(location.pathname==="/studio"&&$("studio-view").hidden)showStudio();
  }
 });
