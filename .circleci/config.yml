@@ -1,0 +1,28 @@
+version: 2.1
+jobs:
+  verify:
+    docker:
+      - image: cimg/node:22-browsers
+    resource_class: medium
+    steps:
+      - checkout
+      - run:
+          name: Install production dependencies
+          command: npm install --omit=dev
+      - run:
+          name: Syntax and backend tests
+          command: npm run check && npm test
+      - run:
+          name: Install isolated browser test runner
+          command: npm install --no-save @playwright/test && npx playwright install chromium
+      - run:
+          name: Public read-only browser smoke tests
+          command: npx playwright test --config=e2e/playwright.config.mjs
+      - store_test_results:
+          path: test-results
+      - store_artifacts:
+          path: test-results
+workflows:
+  test:
+    jobs:
+      - verify
