@@ -247,7 +247,17 @@ async function runOperationalCheck(){
   status.textContent="Recorded "+r.checks.length+" operational checks. Warnings indicate missing provider configuration or unverified recovery.";
   await loadOperationalHistory();
   await loadNotifications();
+  await loadSocialCoverage();
  }catch(err){status.textContent="Health check failed: "+err.message;}
+}
+
+
+async function loadSocialCoverage(){
+ const root=$("social-provider-coverage");
+ try{
+  const d=await fetchJSON("/api/ops/social");
+  root.innerHTML=d.connections.length?d.connections.map(c=>'<p>'+esc(c.stage_name)+' · '+esc(c.platform)+' · last synchronized: '+(c.last_synced_at?prettyDate(c.last_synced_at):'Not yet')+'</p>').join(""):'<p>No approved official social integrations connected yet. Demo social signals are illustrative only.</p>';
+ }catch(err){root.textContent="Social coverage requires superadmin access: "+err.message;}
 }
 
 async function loadOperations(){
