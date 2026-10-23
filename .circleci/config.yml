@@ -42,7 +42,6 @@ jobs:
       - store_artifacts:
           path: security-reports
           destination: security-reports
-          when: always
 workflows:
   test:
     jobs:
