@@ -16,7 +16,7 @@ const money=v=>new Intl.NumberFormat("en-ZA",{style:"currency",currency:"ZAR",ma
 const prettyDate=v=>{const d=String(v).slice(0,10);return new Date(d+"T12:00:00").toLocaleDateString("en-ZA",{day:"numeric",month:"short",year:"numeric"});};
 const PR_NAMES=["Media sentiment","Craft & achievements","Booking reliability","Reputation trajectory","Credible engagement","Industry relationships","Constructive communication"];
 const CAREER_NAMES=["Financial stability","Booking momentum","Relative audience growth","Professional development","Workload balance"];
-let artists=[],filter="all",adminToken="",currentArtist="",allowedTransitions={},demoAccount=null;
+let artists=[],filter="all",adminToken="",currentArtist="",allowedTransitions={},demoAccount=null,realAccount=null;
 const fetchJSON=async(url,options={})=>{
  const r=await fetch(url,options);let d;
  try{d=await r.json();}catch{d={error:"Unexpected server response"};}
@@ -367,10 +367,11 @@ function signInDialog(){
 }
 function setDemoUI(account){
  demoAccount=account;
- $("open-signin").hidden=Boolean(account);
- $("my-account").hidden=!account;
- $("signout-button").hidden=!account;
- $("my-account").textContent=account?"My "+account.role+" studio":"My demo studio";
+ const active=realAccount||account;
+ $("open-signin").hidden=Boolean(active);
+ $("my-account").hidden=!active;
+ $("signout-button").hidden=!active;
+ $("my-account").textContent=realAccount?"My verified "+realAccount.role+" account":account?"My "+account.role+" studio":"My studio";
 }
 async function restoreDemoSession(){
  try{
@@ -414,10 +415,59 @@ async function sendDemoBooking(e){
  finally{button.disabled=false;}
 }
 
+
+async function restoreRealAccount(){
+ try{const d=await fetchJSON("/api/accounts/me");realAccount=d.account;}
+ catch{realAccount=null;}
+ setDemoUI(demoAccount);
+}
+async function renderVerifiedWorkspace(root){
+ if(!realAccount)return;
+ root.innerHTML='<div class="demo-welcome"><span class="eyebrow">VERIFIED ACCOUNT / '+esc(realAccount.role.toUpperCase())+'</span><h3>'+esc(realAccount.name)+'</h3><p>'+esc(realAccount.email)+' · These are your permission-scoped records, not demonstration data.</p></div><section class="demo-tasks" id="verified-account-data"><p class="loading">Loading access-scoped records…</p></section>';
+ const area=$("verified-account-data");
+ try{
+  if(realAccount.role==="customer"){
+   const d=await fetchJSON("/api/accounts/bookings");
+   area.innerHTML='<h3>Your booking enquiries ('+d.bookings.length+')</h3>'+d.bookings.map(b=>'<article class="enquiry-item"><strong>'+esc(b.stage_name)+'</strong><p>'+esc(b.event_type)+' · '+prettyDate(b.event_date)+' · '+esc(b.venue)+'</p><p>Status: '+esc(b.status)+' · Reference: '+esc(b.id)+'</p></article>').join("")+
+     '<p class="form-note">Only bookings submitted while signed in to this verified customer account appear here. Guest requests require separate ownership verification.</p>';
+  }else if(realAccount.role==="artist"){
+   const d=await fetchJSON("/api/accounts/artists");
+   area.innerHTML='<h3>Your permitted artists</h3>'+ (d.memberships.map(m=>'<article class="enquiry-item"><strong>'+esc(m.stage_name)+'</strong> · '+esc(m.access_role)+'<button type="button" class="outline-button" data-owned-artist="'+esc(m.slug)+'">View my artist dashboard ↗</button></article>').join("")||'<p>No artist assigned yet. Ask CABO management to approve a specific artist membership.</p>')+'<div id="verified-artist-dashboard"></div>';
+   area.querySelectorAll("[data-owned-artist]").forEach(btn=>btn.addEventListener("click",async()=>{
+    const out=$("verified-artist-dashboard");out.textContent="Loading your scoped artist data…";
+    try{
+     const d=await fetchJSON("/api/accounts/artist-dashboard/"+encodeURIComponent(btn.dataset.ownedArtist));
+     out.innerHTML='<h3>'+esc(d.artist.name)+'</h3><div class="demo-actions">'+kpi("PR SCORE",d.pr.score+"/100","ILLUSTRATIVE INDEX")+kpi("CAREER HEALTH",d.career.score+"/100","ILLUSTRATIVE INDEX")+kpi("YOUR BOOKINGS",d.bookings.length,"SCOPED RECORDS")+'</div><h4>Related booking events</h4>'+d.bookings.map(b=>'<p>'+esc(b.event_type)+' · '+prettyDate(b.event_date)+' · '+esc(b.status)+'</p>').join("");
+    }catch(err){out.textContent=err.message;}
+   }));
+  }else{area.textContent="Your role requires a dedicated access review.";}
+ }catch(err){area.textContent="Could not load account records: "+err.message;}
+}
+async function realLogin(e){
+ e.preventDefault();const msg=$("real-login-message"),btn=e.currentTarget.querySelector('button[type="submit"]');
+ btn.disabled=true;msg.textContent="Signing in…";
+ try{
+  const d=await fetchJSON("/api/accounts/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:$("real-login-email").value,password:$("real-login-password").value})});
+  $("real-login-password").value="";
+  realAccount=d.account;
+  await fetchJSON("/api/demo-auth/logout",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"}).catch(()=>{});
+  setDemoUI(null);
+  $("real-login-dialog").close();
+  showStudio("demo");
+ }catch(err){msg.textContent=err.message;}
+ finally{btn.disabled=false;}
+}
+async function realLogout(){
+ try{await fetchJSON("/api/accounts/logout",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});}
+ catch(err){console.warn("Verified account logout could not be confirmed.");return;}
+ realAccount=null;setDemoUI(demoAccount);showPublic();
+}
+
 async function loadDemoWorkspace(){
  const root=$("demo-workspace-content");
  if(!demoAccount){
   $("demo-booking-area").hidden=true;
+  if(realAccount){await renderVerifiedWorkspace(root);return;}
   root.innerHTML='<div class="demo-welcome"><h3>Sign in to your demo workspace</h3><p>Choose Customer, Artist or Manager. Each role is fully synthetic, with no access to confidential records.</p></div><button class="primary-button" id="workspace-signin" type="button">Choose an account ↗</button>';
   $("workspace-signin").addEventListener("click",signInDialog);
   return;
@@ -454,6 +504,7 @@ async function submitDemoSignIn(e){
  finally{btn.disabled=false;}
 }
 async function signOutDemo(){
+ if(realAccount&&!demoAccount)return realLogout();
  try{await fetchJSON("/api/demo-auth/logout",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});}catch(e){console.warn("Could not confirm demo sign out; retry before using a shared device.");return;}
  setDemoUI(null);
  showPublic();
@@ -469,6 +520,9 @@ document.addEventListener("DOMContentLoaded",async()=>{
  $("open-real-account").addEventListener("click",()=>{$("signin-dialog").close();$("real-account-message").textContent="";$("real-account-dialog").showModal();});
  $("close-real-account").addEventListener("click",()=>$("real-account-dialog").close());
  $("real-account-form").addEventListener("submit",registerRealAccount);
+ $("open-real-login").addEventListener("click",()=>{$("signin-dialog").close();$("real-login-message").textContent="";$("real-login-dialog").showModal();});
+ $("close-real-login").addEventListener("click",()=>$("real-login-dialog").close());
+ $("real-login-form").addEventListener("submit",realLogin);
  $("operations-refresh").addEventListener("click",loadOperations);
  $("operations-run-check").addEventListener("click",runOperationalCheck);
  $("notification-form").addEventListener("submit",queueNotification);
@@ -484,6 +538,7 @@ document.addEventListener("DOMContentLoaded",async()=>{
   $("signin-password").focus();
  }));
  await restoreDemoSession();
+ await restoreRealAccount();
  $("nav-book").addEventListener("click",()=>{showPublic();$("artists").scrollIntoView({behavior:"smooth"});});
  document.querySelectorAll(".studio-tab").forEach(tab=>tab.addEventListener("click",()=>showStudio(tab.dataset.panel)));
  $("artist-search").addEventListener("input",renderRoster);
