@@ -81,3 +81,19 @@ test("public and fictional demo sessions cannot read superadmin operations",asyn
   expect([401,403],path+" must refuse demo-manager access").toContain(result.status());
  }
 });
+
+test("manager booking form waits for artist choices even if initial roster is delayed",async({page})=>{
+ await page.route("**/api/artists",async route=>{
+  const response=await route.fetch();
+  await new Promise(resolve=>setTimeout(resolve,1200));
+  await route.fulfill({response});
+ });
+ await page.goto("/");
+ await page.locator("#open-signin").click();
+ await page.locator("#signin-email").fill("manager.demo@cabo.test");
+ await page.locator("#signin-password").fill("12345");
+ await page.locator("#signin-submit").click();
+ await expect(page.locator("#demo-booking-area")).toBeVisible();
+ await expect(page.locator("#demo-booking-artist option")).toHaveCount(8);
+ await expect(page.locator("#demo-booking-artist")).toHaveValue(/.+/);
+});
