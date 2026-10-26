@@ -390,6 +390,17 @@ async function loadManagementAnalytics(){
  }
 }
 
+async function verifyGroqConnection(){
+ const button=$("verify-groq-provider"),status=$("verify-groq-status");
+ button.disabled=true;
+ status.textContent="Checking Groq connectivity with a minimal AI request…";
+ try{
+  const result=await fetchJSON("/api/ops/providers/groq/verify",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
+  status.textContent=result.verified?"Groq verified at "+result.checkedAt+" ("+result.durationMs+" ms). This checks connectivity, not advice accuracy.":result.notice;
+  await loadReadinessEvidence();
+ }catch(err){status.textContent="Groq not verified: "+err.message;}
+ finally{button.disabled=false;}
+}
 async function loadReadinessEvidence(){
  const root=$("readiness-evidence");
  try{
@@ -403,7 +414,7 @@ async function loadOperations(){
   const d=await fetchJSON("/api/ops/summary");
   const rows=[["Registered accounts",d.summary.accounts],["Booking enquiries",d.summary.enquiries],["Contracts",d.summary.contracts],["Invoices",d.summary.invoices],["Social connections",d.summary.social_connections],["Pending notifications",d.summary.pending_notifications]];
   $("operations-content").innerHTML=rows.map(x=>kpi(x[0].toUpperCase(),String(x[1]),"LIVE NEON RECORDS")).join("");
-  status.textContent="Provider status: payments not configured; social integrations require consent and API credentials; backup restore testing remains unverified.";
+  status.textContent="Neon counts loaded. Provider verification evidence appears below; configuration alone does not prove service availability.";
   await Promise.all([refreshFinanceLedger(),loadManagementAnalytics(),loadPendingAccounts()]);
   // Finance and analytics are independent and both remain protected by superadmin sessions.
 
@@ -765,6 +776,7 @@ document.addEventListener("DOMContentLoaded",async()=>{
  $("password-recovery-complete-form").addEventListener("submit",completePasswordRecovery);
  await handlePasswordRecoveryLink();
  $("operations-refresh").addEventListener("click",loadOperations);
+ $("verify-groq-provider").addEventListener("click",verifyGroqConnection);
  $("analytics-refresh").addEventListener("click",loadManagementAnalytics);
  $("analytics-period").addEventListener("change",loadManagementAnalytics);
  $("operations-run-check").addEventListener("click",runOperationalCheck);
