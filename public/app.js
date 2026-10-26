@@ -390,6 +390,13 @@ async function loadManagementAnalytics(){
  }
 }
 
+async function loadReadinessEvidence(){
+ const root=$("readiness-evidence");
+ try{
+  const report=await fetchJSON("/api/ops/readiness");
+  root.innerHTML=report.checks.map(x=>'<p><strong>'+esc(x.component.replaceAll("_"," "))+'</strong> — '+(x.verified?'Verified':x.configured?'Configured, not verified':'Not configured or verified')+'</p>').join("")+'<p class="form-note">'+esc(report.warning)+'</p>';
+ }catch(err){root.textContent="Readiness unavailable: "+err.message;}
+}
 async function loadOperations(){
  const status=$("operations-message");status.textContent="Fetching operational counts from Neon…";
  try{
@@ -401,6 +408,7 @@ async function loadOperations(){
   // Finance and analytics are independent and both remain protected by superadmin sessions.
 
   await loadOperationalHistory();
+  await loadReadinessEvidence();
  }catch(e){status.textContent="Superadmin access required: "+e.message;$("operations-content").innerHTML="";}
 }
 
