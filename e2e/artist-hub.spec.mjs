@@ -103,3 +103,25 @@ test("manager booking form waits for artist choices even if initial roster is de
  await expect(page.locator("#demo-booking-artist option")).toHaveCount(8);
  await expect(page.locator("#demo-booking-artist")).toHaveValue(/.+/);
 });
+
+test("mobile public and manager dashboard have usable touch controls",async({page})=>{
+ await page.setViewportSize({width:375,height:812});
+ await page.goto("/");
+ await expect(page.locator("#open-signin")).toBeVisible();
+ await page.locator("#open-signin").click();
+ await expect(page.locator("#signin-dialog")).toBeVisible();
+ await page.locator("#signin-email").fill("manager.demo@cabo.test");
+ await page.locator("#signin-password").fill("12345");
+ await page.locator("#signin-submit").click();
+ await expect(page.locator("#demo-booking-area")).toBeVisible();
+ await expect(page.locator("#demo-booking-artist option")).toHaveCount(8);
+ await expect(page.locator("#demo-booking-form button[type=submit]")).toBeVisible();
+});
+test("production demo cookie uses HttpOnly, Secure and SameSite",async({request})=>{
+ const response=await request.post("/api/demo-auth/login",{data:{email:"artist.demo@cabo.test",password:"12345"}});
+ expect(response.status()).toBe(200);
+ const cookie=response.headers()["set-cookie"]||"";
+ expect(cookie).toMatch(/HttpOnly/i);
+ expect(cookie).toMatch(/Secure/i);
+ expect(cookie).toMatch(/SameSite=Strict/i);
+});
