@@ -18,6 +18,6 @@ jobs:
       - name: Verify committed credential scanning and regression tests
         run: node --test scripts/security/scan-secrets.test.mjs && node scripts/security/scan-secrets.mjs
       - name: Verify proxy identity logic and existing backend tests
-        run: npm run check && npm test
+        run: npm install --omit=dev --no-audit --no-fund && npm run check && npm test
       - name: Audit production dependencies
-        run: npm install --omit=dev --no-audit --no-fund && npm audit --omit=dev --audit-level=high
+        run: npm audit --omit=dev --audit-level=high
