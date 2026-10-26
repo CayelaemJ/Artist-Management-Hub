@@ -518,6 +518,10 @@ async function loadDemoBookings(){
  const area=$("demo-booking-area"),list=$("demo-booking-list");
  if(!demoAccount){area.hidden=true;return;}
  area.hidden=false;
+ if(!artists.length){
+  try{const roster=await fetchJSON("/api/artists");artists=roster.artists;}
+  catch(err){list.textContent="Artist choices are unavailable: "+err.message;return;}
+ }
  $("demo-booking-artist").innerHTML=artists.map(a=>'<option value="'+esc(a.slug)+'">'+esc(a.stage_name)+'</option>').join("");
  $("demo-booking-date").min=new Date().toISOString().slice(0,10);
  if(!$("demo-booking-date").value)$("demo-booking-date").value=new Date(Date.now()+7*86400000).toISOString().slice(0,10);
