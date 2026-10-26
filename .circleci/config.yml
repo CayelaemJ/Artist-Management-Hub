@@ -22,6 +22,9 @@ jobs:
           name: Install isolated browser test runner
           command: npm install --no-save @playwright/test && npx playwright install chromium
       - run:
+          name: Public API and authorization smoke tests
+          command: RUN_LIVE_SMOKE=1 LIVE_SMOKE_URL=https://cabo-artist-hub.onrender.com node --test test/live-smoke.mjs
+      - run:
           name: Public read-only browser smoke tests
           command: npx playwright test --config=e2e/playwright.config.mjs
       - store_test_results:
