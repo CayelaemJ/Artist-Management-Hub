@@ -35,6 +35,7 @@ test("HTTP end-to-end: health, PR dashboard, demo sign-in and cross-role authori
   assert.ok(Number.isFinite(metrics.pr.score));assert.ok(Number.isFinite(metrics.career.score));
   assert.equal((await fetch(base+"/api/admin/enquiries")).status,401);
   assert.equal((await fetch(base+"/api/ops/summary")).status,403);
+  assert.equal((await fetch(base+"/api/ops/providers/groq/verify",{method:"POST",headers:{"Origin":base,"Content-Type":"application/json"},body:"{}"})).status,403,"Groq connectivity check is superadmin-only");
   assert.equal((await fetch(base+"/api/ops/analytics?days=90")).status,403,"Private reporting must not be public");
   assert.equal((await fetch(base+"/api/ops/analytics?days=365")).status,403,"Date filtering cannot bypass superadmin permission");
   assert.equal((await fetch(base+"/api/demo-bookings")).status,403);
