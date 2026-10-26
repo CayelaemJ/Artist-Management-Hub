@@ -62,3 +62,22 @@ test("race regression: artist roster loading cannot take focus away from sign-in
  await expect(page.locator("#demo-panel")).toBeVisible();
  await expect(page.locator("#overview-panel")).toBeHidden();
 });
+
+
+test("public and fictional demo sessions cannot read superadmin operations",async({page})=>{
+ await page.goto("/");
+ const privatePaths=["/api/ops/readiness","/api/ops/summary","/api/ops/analytics","/api/ops/finance","/api/ops/accounts","/api/admin/enquiries"];
+ for(const path of privatePaths){
+  const result=await page.request.get(path);
+  expect([401,403],path+" must refuse anonymous access").toContain(result.status());
+ }
+ await page.locator("#open-signin").click();
+ await page.locator("#signin-email").fill("manager.demo@cabo.test");
+ await page.locator("#signin-password").fill("12345");
+ await page.locator("#signin-submit").click();
+ await expect(page.locator("#demo-panel")).toBeVisible();
+ for(const path of privatePaths){
+  const result=await page.request.get(path);
+  expect([401,403],path+" must refuse demo-manager access").toContain(result.status());
+ }
+});
