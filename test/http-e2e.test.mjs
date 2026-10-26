@@ -35,6 +35,7 @@ test("HTTP end-to-end: health, PR dashboard, demo sign-in and cross-role authori
   assert.ok(Number.isFinite(metrics.pr.score));assert.ok(Number.isFinite(metrics.career.score));
   assert.equal((await fetch(base+"/api/admin/enquiries")).status,401);
   assert.equal((await fetch(base+"/api/ops/summary")).status,403);
+  assert.equal((await fetch(base+"/api/ops/providers/groq/verify",{method:"POST",headers:{"Origin":base,"Content-Type":"application/json"},body:"{}"})).status,403,"Provider probes must be superadmin-only");
   assert.equal((await fetch(base+"/api/ops/analytics?days=90")).status,403,"Private reporting must not be public");
   assert.equal((await fetch(base+"/api/ops/analytics?days=365")).status,403,"Date filtering cannot bypass superadmin permission");
   assert.equal((await fetch(base+"/api/demo-bookings")).status,403);
@@ -45,6 +46,7 @@ test("HTTP end-to-end: health, PR dashboard, demo sign-in and cross-role authori
   const workspace=await fetch(base+"/api/demo-auth/workspace",{headers:{Cookie:cookie}});
   assert.equal(workspace.status,200);assert.equal((await workspace.json()).role,"manager");
   assert.equal((await fetch(base+"/api/demo-bookings",{headers:{Cookie:cookie}})).status,200);
+  assert.equal((await fetch(base+"/api/ops/providers/groq/verify",{method:"POST",headers:{"Origin":base,"Cookie":cookie,"Content-Type":"application/json"},body:"{}"})).status,403,"Demo manager cannot run paid Groq probes");
   const invalid=await fetch(base+"/api/accounts/register",{method:"POST",headers:{"Content-Type":"application/json","Origin":base},body:JSON.stringify({email:"qa.invalid@cabo.test",name:"QA Person",role:"customer",password:"12345"})});
   assert.equal(invalid.status,400,"Weak production passwords must fail");
   const unknown=await fetch(base+"/api/accounts/request-password-reset",{method:"POST",headers:{"Content-Type":"application/json","Origin":base},body:JSON.stringify({email:"unknown-recovery-qa@cabo.test"})});
