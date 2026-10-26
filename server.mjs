@@ -915,6 +915,12 @@ async function productionReadiness(req,res){
   {component:"backup_restore",configured:false,verified:false}
  ];
  try {await pool.query("SELECT 1");checks[0].verified=true;}catch{}
+ if(checks[1].configured){
+  try{
+   const q=await pool.query("SELECT outcome,checked_at FROM hub_operational_checks WHERE check_name='groq_provider' ORDER BY checked_at DESC LIMIT 1");
+   checks[1].verified=Boolean(q.rowCount&&q.rows[0].outcome==="pass"&&Date.now()-new Date(q.rows[0].checked_at).getTime()<86400000);
+  }catch{}
+ }
  try{
   const q=await pool.query("SELECT COUNT(*)::int AS n FROM social_provider_connections");
   checks[4].configured=q.rows[0].n>0;
