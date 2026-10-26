@@ -871,6 +871,39 @@ async function customerAcceptContract(req,res,id){
 }
 
 
+async function verifyGroqProvider(req,res){
+ if(!superadminUser(req))return fail(res,403,"Superadmin access required");
+ if(!validOrigin(req))return fail(res,403,"Origin not allowed");
+ if(!rateLimit(req,"verify-groq",3,3600000))return fail(res,429,"Provider verification is limited to three attempts per hour");
+ if(!GROQ_API_KEY)return fail(res,503,"Groq key is not configured in Render");
+ const started=Date.now();
+ const controller=new AbortController();
+ const timer=setTimeout(()=>controller.abort(),12000);
+ let outcome="warn",status="unavailable";
+ try{
+  const upstream=await fetch("https://api.groq.com/openai/v1/chat/completions",{
+   method:"POST",signal:controller.signal,
+   headers:{"Content-Type":"application/json","Authorization":"Bearer "+GROQ_API_KEY},
+   body:JSON.stringify({model:GROQ_MODEL,temperature:0,max_tokens:8,
+    messages:[{role:"user",content:"Return the word READY."}]})
+  });
+  if(upstream.ok){
+   const data=await upstream.json();
+   if(typeof data?.choices?.[0]?.message?.content==="string"&&data.choices[0].message.content.trim()){
+    outcome="pass";status="verified";
+   }else status="invalid_response";
+  }else status="provider_rejected";
+ }catch{status="unreachable";}
+ finally{clearTimeout(timer);}
+ const durationMs=Date.now()-started;
+ // Never persist API keys, upstream bodies, model output, or provider error details.
+ await pool.query("INSERT INTO hub_operational_checks(check_name,outcome,details) VALUES('groq_provider',$1,$2)",[
+  outcome,"Model check "+status+"; duration "+durationMs+"ms"
+ ]);
+ return json(res,outcome==="pass"?200:502,{provider:"Groq",status,verified:outcome==="pass",checkedAt:new Date().toISOString(),durationMs,
+  notice:outcome==="pass"?"Small provider completion succeeded. Production response quality requires separate review.":"Provider could not complete a small test request; AI remains in explicit offline fallback mode."});
+}
+
 async function productionReadiness(req,res){
  if(!superadminUser(req))return fail(res,403,"Superadmin required");
  const checks=[
@@ -882,6 +915,12 @@ async function productionReadiness(req,res){
   {component:"backup_restore",configured:false,verified:false}
  ];
  try {await pool.query("SELECT 1");checks[0].verified=true;}catch{}
+ if(checks[1].configured){
+  try{
+   const q=await pool.query("SELECT outcome,checked_at FROM hub_operational_checks WHERE check_name='groq_provider' ORDER BY checked_at DESC LIMIT 1");
+   checks[1].verified=Boolean(q.rowCount&&q.rows[0].outcome==="pass"&&Date.now()-new Date(q.rows[0].checked_at).getTime()<86400000);
+  }catch{}
+ }
  try{
   const q=await pool.query("SELECT COUNT(*)::int AS n FROM social_provider_connections");
   checks[4].configured=q.rows[0].n>0;
@@ -920,6 +959,7 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==="POST"&&/^\/api\/accounts\/notifications\/[a-f0-9-]{36}\/read$/i.test(url.pathname))return readAccountNotification(req,res,url.pathname.split("/")[4]);
   if(req.method==="GET"&&url.pathname==="/api/ops/summary")return opsSummary(req,res);
   if(req.method==="GET"&&url.pathname==="/api/ops/readiness")return productionReadiness(req,res);
+  if(req.method==="POST"&&url.pathname==="/api/ops/providers/groq/verify")return verifyGroqProvider(req,res);
   if(req.method==="GET"&&url.pathname==="/api/ops/analytics")return opsAnalytics(req,res,url);
   if(req.method==="POST"&&url.pathname==="/api/ops/check")return recordOperationalCheck(req,res);
   if(req.method==="GET"&&url.pathname==="/api/ops/history")return operationalHistory(req,res);
