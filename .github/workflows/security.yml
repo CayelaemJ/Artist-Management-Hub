@@ -1,0 +1,23 @@
+name: Artist Hub Security Verification
+on:
+  pull_request:
+    branches: [main, feat/cabo-artist-hub-mvp]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify committed credential scanning and regression tests
+        run: node --test scripts/security/scan-secrets.test.mjs && node scripts/security/scan-secrets.mjs
+      - name: Verify proxy identity logic and existing backend tests
+        run: npm install --omit=dev --no-audit --no-fund && npm run check && npm test
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
