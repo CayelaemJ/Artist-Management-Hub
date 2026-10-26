@@ -43,6 +43,12 @@ test("optional write test: create and advance one fictional booking",async({page
  await page.locator("#demo-booking-form button[type=submit]").click();
  await expect(page.locator("#demo-booking-message")).toContainText("Saved to Neon");
  await expect(page.locator("#demo-booking-list")).toContainText("Automated QA demo");
+ const booking=page.locator("#demo-booking-list article.enquiry-item").filter({hasText:"Automated QA demo"}).first();
+ await expect(booking.locator("select[data-demo-next]")).toBeVisible();
+ await booking.locator("select[data-demo-next]").selectOption("availability_check");
+ await booking.locator("button[data-demo-update]").click();
+ await expect(page.locator("#demo-booking-message")).toContainText("advanced to availability check");
+ await expect(page.locator("#demo-booking-list article.enquiry-item").filter({hasText:"Automated QA demo"}).first()).toContainText("availability_check");
 });
 
 test("race regression: artist roster loading cannot take focus away from sign-in workspace",async({page})=>{
