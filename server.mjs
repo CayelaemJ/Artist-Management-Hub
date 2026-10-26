@@ -874,6 +874,26 @@ async function customerAcceptContract(req,res,id){
  }catch(e){await client.query("ROLLBACK");if(e.code==="23505")return fail(res,409,"Contract was already acknowledged");throw e;}finally{client.release();}
 }
 
+
+async function productionReadiness(req,res){
+ if(!superadminUser(req))return fail(res,403,"Superadmin required");
+ const checks=[
+  {component:"database",configured:Boolean(pool),verified:false},
+  {component:"groq",configured:Boolean(process.env.GROQ_API_KEY),verified:false},
+  {component:"email",configured:Boolean(process.env.RESEND_API_KEY&&process.env.VERIFICATION_FROM_EMAIL),verified:false},
+  {component:"payments",configured:Boolean(process.env.YOCO_SECRET_KEY),verified:false},
+  {component:"social",configured:false,verified:false},
+  {component:"backup_restore",configured:false,verified:false}
+ ];
+ try {await pool.query("SELECT 1");checks[0].verified=true;}catch{}
+ try{
+  const q=await pool.query("SELECT COUNT(*)::int AS n FROM social_provider_connections");
+  checks[4].configured=q.rows[0].n>0;
+ }catch{}
+ return json(res,200,{status:checks.every(c=>c.verified)?"verified":"requires_verification",checks,
+  warning:"Configured is not equivalent to working. External provider transactions, social consent and an offsite backup restore drill require separate evidence."});
+}
+
 const server=http.createServer(async(req,res)=>{
  try{
   const url=new URL(req.url||"/","http://localhost");
@@ -903,6 +923,7 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==="GET"&&url.pathname==="/api/accounts/notifications")return accountNotifications(req,res);
   if(req.method==="POST"&&/^\/api\/accounts\/notifications\/[a-f0-9-]{36}\/read$/i.test(url.pathname))return readAccountNotification(req,res,url.pathname.split("/")[4]);
   if(req.method==="GET"&&url.pathname==="/api/ops/summary")return opsSummary(req,res);
+  if(req.method==="GET"&&url.pathname==="/api/ops/readiness")return productionReadiness(req,res);
   if(req.method==="GET"&&url.pathname==="/api/ops/analytics")return opsAnalytics(req,res,url);
   if(req.method==="POST"&&url.pathname==="/api/ops/check")return recordOperationalCheck(req,res);
   if(req.method==="GET"&&url.pathname==="/api/ops/history")return operationalHistory(req,res);
