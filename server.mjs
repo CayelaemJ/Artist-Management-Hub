@@ -11,6 +11,7 @@ import {retryDelaySeconds,sendResendEmail} from "./lib/email-outbox.mjs";
 import {verifyYocoWebhook} from "./lib/yoco-webhooks.mjs";
 import {localCareerGuidance} from "./lib/advice.mjs";
 import {hashPassword,verifyPassword,tokenHash,issueToken,accountCookie,clearAccountCookie,extractAccountCookie} from "./lib/account-auth.mjs";
+import {APPROVE_VERIFIED_ACCOUNT_SQL} from "./lib/account-approval.mjs";
 import {credentialConfigured,authenticate,superadminUser,superadminStart,superadminEnd,adminCookie,clearAdminCookie} from "./lib/superadmin-auth.mjs";
 import {DEMO_ENABLED,findDemoUser,loginAttemptAllowed,newSession,sessionUser,endSession,sessionCookie,clearSessionCookie,demoWorkspace} from "./lib/demo-auth.mjs";
 import {weightedScore,PR_WEIGHTS,HEALTH_WEIGHTS,financialTotals} from "./lib/metrics.mjs";
@@ -443,8 +444,8 @@ async function draftInvoice(req,res){
 
 async function pendingAccounts(req,res){
  if(!superadminUser(req))return fail(res,403,"Superadmin access required");
- const r=await pool.query("SELECT id,email,display_name,role,verified_at,created_at FROM hub_accounts WHERE disabled_at IS NULL ORDER BY created_at DESC LIMIT 100");
- return json(res,200,{accounts:r.rows,notice:"Verification approval is an administrative manual check; validate identity and email ownership out of band before activation."});
+ const r=await pool.query("SELECT id,email,display_name,role,verified_at,email_verified_at,created_at FROM hub_accounts WHERE disabled_at IS NULL ORDER BY created_at DESC LIMIT 100");
+ return json(res,200,{accounts:r.rows,notice:"Email verification must complete before separate management approval. Pending email verifications cannot be bypassed by approving an account."});
 }
 async function approveAccount(req,res,id){
  if(!superadminUser(req))return fail(res,403,"Superadmin access required");
@@ -452,9 +453,9 @@ async function approveAccount(req,res,id){
  if(!/^[0-9a-f-]{36}$/i.test(id))return fail(res,400,"Invalid account ID");
  let b;try{b=await body(req);}catch(e){return fail(res,400,e.message);}
  if(b.confirm!==true)return fail(res,400,"Explicit verification confirmation required");
- const r=await pool.query("UPDATE hub_accounts SET verified_at=now(),email_verified_at=COALESCE(email_verified_at,now()) WHERE id=$1 AND disabled_at IS NULL AND verified_at IS NULL RETURNING id,email,role,verified_at,email_verified_at",[id]);
- if(!r.rowCount)return fail(res,404,"Pending account not found");
- return json(res,200,{account:r.rows[0],notice:"Superadmin manually approved account; ensure email ownership was independently verified."});
+ const r=await pool.query(APPROVE_VERIFIED_ACCOUNT_SQL,[id]);
+ if(!r.rowCount)return fail(res,409,"Account must independently verify its email before management approval, or has already been approved");
+ return json(res,200,{account:r.rows[0],notice:"Management approval recorded after independent email verification."});
 }
 
 
@@ -464,7 +465,7 @@ async function grantArtistMembership(req,res){
  let b;try{b=await body(req);}catch(e){return fail(res,400,e.message);}
  const account=text(b.accountId,60),artistSlug=text(b.artistSlug,100),role=text(b.accessRole,30);
  if(!/^[a-f0-9-]{36}$/i.test(account)||!artistSlug||!["owner","editor","viewer"].includes(role))return fail(res,400,"Valid account, artist and access role required");
- const q=await pool.query("INSERT INTO artist_account_memberships(account_id,artist_id,access_role) SELECT u.id,a.id,$3 FROM hub_accounts u CROSS JOIN artists a WHERE u.id=$1 AND a.slug=$2 AND u.verified_at IS NOT NULL AND u.disabled_at IS NULL AND u.role='artist' ON CONFLICT (account_id,artist_id) DO UPDATE SET access_role=EXCLUDED.access_role RETURNING account_id,artist_id,access_role",[account,artistSlug,role]);
+ const q=await pool.query("INSERT INTO artist_account_memberships(account_id,artist_id,access_role) SELECT u.id,a.id,$3 FROM hub_accounts u CROSS JOIN artists a WHERE u.id=$1 AND a.slug=$2 AND u.verified_at IS NOT NULL AND u.email_verified_at IS NOT NULL AND u.disabled_at IS NULL AND u.role='artist' ON CONFLICT (account_id,artist_id) DO UPDATE SET access_role=EXCLUDED.access_role RETURNING account_id,artist_id,access_role",[account,artistSlug,role]);
  if(!q.rowCount)return fail(res,404,"Verified artist account and target artist required");
  return json(res,200,{membership:q.rows[0],notice:"Artist membership approved by superadmin."});
 }
