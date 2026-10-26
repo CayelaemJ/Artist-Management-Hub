@@ -3,6 +3,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
 import crypto from "node:crypto";
+import {validMutationOrigin} from "./lib/origin-guard.mjs";
+import {clientIp} from "./lib/client-ip.mjs";
 import pg from "pg";
 import {buildManagementAnalytics,reportPeriod} from "./lib/management-analytics.mjs";
 import {retryDelaySeconds,sendResendEmail} from "./lib/email-outbox.mjs";
@@ -51,8 +53,7 @@ function authorised(req){
 }
 function rateLimit(req,key,max,windowMs){
  // Never trust caller-controlled forwarded headers unless the reverse proxy rewrites them.
- const forwarded=String(req.headers["x-forwarded-for"]||"").split(",")[0].trim();
- const ip=(process.env.TRUST_PROXY_HOPS==="1"&&forwarded?forwarded:String(req.socket.remoteAddress||"unknown")).slice(0,100);
+ const ip=clientIp(req);
  const id=key+":"+ip, now=Date.now();
  if(buckets.size>=50000) for(const [k,v] of buckets) if(v.reset<=now) buckets.delete(k);
  if(buckets.size>=50000&&!buckets.has(id))return false; // bounded, fail-closed
@@ -65,12 +66,7 @@ async function body(req){
  for await(const part of req){size+=part.length;if(size>12000) throw Error("Request too large");buf+=part.toString("utf8");}
  try {return JSON.parse(buf);}catch{throw Error("Invalid JSON");}
 }
-function validOrigin(req){
- const origin=req.headers.origin;
- if(!origin) return true;
- const host=req.headers.host;
- try {return new URL(origin).host===host;}catch{return false;}
-}
+function validOrigin(req){return validMutationOrigin(req);}
 function text(value,max){return typeof value==="string"?value.trim().slice(0,max):"";}
 function validDate(v){return /^\d{4}-\d{2}-\d{2}$/.test(v)&&!Number.isNaN(Date.parse(v))&&new Date(v).toISOString().slice(0,10)===v;}
 function validTime(v){return v==null||v===""||/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(v);}
