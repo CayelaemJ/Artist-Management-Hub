@@ -5,6 +5,7 @@ import {fileURLToPath} from "node:url";
 import crypto from "node:crypto";
 import pg from "pg";
 import {requestClientIp} from "./lib/request-identity.mjs";
+import {validRequestOrigin} from "./lib/origin-policy.mjs";
 import {buildManagementAnalytics,reportPeriod} from "./lib/management-analytics.mjs";
 import {retryDelaySeconds,sendResendEmail} from "./lib/email-outbox.mjs";
 import {verifyYocoWebhook} from "./lib/yoco-webhooks.mjs";
@@ -65,12 +66,7 @@ async function body(req){
  for await(const part of req){size+=part.length;if(size>12000) throw Error("Request too large");buf+=part.toString("utf8");}
  try {return JSON.parse(buf);}catch{throw Error("Invalid JSON");}
 }
-function validOrigin(req){
- const origin=req.headers.origin;
- if(!origin) return true;
- const host=req.headers.host;
- try {return new URL(origin).host===host;}catch{return false;}
-}
+function validOrigin(req){return validRequestOrigin(req)}
 function text(value,max){return typeof value==="string"?value.trim().slice(0,max):"";}
 function validDate(v){return /^\d{4}-\d{2}-\d{2}$/.test(v)&&!Number.isNaN(Date.parse(v))&&new Date(v).toISOString().slice(0,10)===v;}
 function validTime(v){return v==null||v===""||/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(v);}
